@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0e1a;
+  --surface: #111827;
+  --surface2: #1a2235;
+  --border: #1e293b;
+  --border2: #2d3f5c;
+  --accent: #6366f1;
+  --accent2: #22d3ee;
+  --accent3: #a78bfa;
+  --text: #e2e8f0;
+  --text-muted: #64748b;
+  --text-dim: #94a3b8;
+  --success: #10b981;
+  --error: #ef4444;
+  --warning: #f59e0b;
+  --llm: #7c3aed;
+  --functional: #0ea5e9;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ReactFlow overrides */
+.react-flow__background { background: var(--bg) !important; }
+.react-flow__edge-path { stroke: var(--border2) !important; stroke-width: 2px; }
+.react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent) !important; }
+.react-flow__handle {
+  width: 10px !important;
+  height: 10px !important;
+  border: 2px solid var(--border2) !important;
+  background: var(--surface) !important;
+}
+.react-flow__handle:hover { border-color: var(--accent) !important; background: var(--accent) !important; }
+.react-flow__controls { background: var(--surface) !important; border: 1px solid var(--border) !important; }
+.react-flow__controls-button { background: var(--surface) !important; border-bottom: 1px solid var(--border) !important; color: var(--text-dim) !important; }
+.react-flow__minimap { background: var(--surface) !important; border: 1px solid var(--border) !important; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Animations */
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--accent); box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
+  50% { border-color: var(--accent2); box-shadow: 0 0 0 6px rgba(99,102,241,0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in { animation: fade-in 0.3s ease forwards; }
+
+/* Node glow effects */
+.node-llm { box-shadow: 0 0 0 1px var(--llm), 0 4px 20px rgba(124,58,237,0.2); }
+.node-functional { box-shadow: 0 0 0 1px var(--functional), 0 4px 20px rgba(14,165,233,0.2); }
+.node-selected { animation: pulse-border 2s infinite; }
