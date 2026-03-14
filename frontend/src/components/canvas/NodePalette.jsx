@@ -1,4 +1,4 @@
-import { Brain, Zap, Globe, Code2, GitBranch } from 'lucide-react'
+import { Brain, Globe, Code2, GitBranch, X } from 'lucide-react'
 
 const PaletteItem = ({ type, icon: Icon, label, description, color, onDragStart }) => (
   <div
@@ -21,7 +21,7 @@ const PaletteItem = ({ type, icon: Icon, label, description, color, onDragStart 
   </div>
 )
 
-export const NodePalette = () => {
+export const NodePalette = ({ onClose }) => {
   const onDragStart = (event, nodeType) => {
     event.dataTransfer.setData('application/reactflow', nodeType)
     event.dataTransfer.effectAllowed = 'move'
@@ -33,9 +33,18 @@ export const NodePalette = () => {
       style={{ background: 'var(--surface)', borderRight: '1px solid var(--border)' }}
     >
       <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-        <h2 className="text-xs font-mono font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>
-          Node Palette
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-mono font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>
+            Node Palette
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded hover:bg-white/5 transition-colors"
+            title="Close palette"
+          >
+            <X size={14} style={{ color: 'var(--text-muted)' }} />
+          </button>
+        </div>
         <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Drag nodes onto the canvas</p>
       </div>
 

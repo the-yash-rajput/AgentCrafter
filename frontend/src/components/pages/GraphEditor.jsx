@@ -1,7 +1,8 @@
 import { useEffect, useCallback, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { PanelLeftOpen } from 'lucide-react'
 import ReactFlow, {
-  Background, Controls, MiniMap, addEdge, useReactFlow, ReactFlowProvider,
+  Background, Controls, MiniMap, useReactFlow, ReactFlowProvider,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import toast from 'react-hot-toast'
@@ -34,6 +35,7 @@ const GraphEditorInner = () => {
   const [loading, setLoading] = useState(true)
   const [showSchemaEditor, setShowSchemaEditor] = useState(false)
   const [showRunModal, setShowRunModal] = useState(false)
+  const [showNodePalette, setShowNodePalette] = useState(true)
   const [showConfigPanel, setShowConfigPanel] = useState(true)
   const [configPanelWidth, setConfigPanelWidth] = useState(320)
   const [isResizingPanel, setIsResizingPanel] = useState(false)
@@ -192,9 +194,21 @@ const GraphEditorInner = () => {
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <NodePalette />
+        {showNodePalette && (
+          <NodePalette onClose={() => setShowNodePalette(false)} />
+        )}
 
-        <div className="flex-1" ref={reactFlowWrapper}>
+        <div className="relative flex-1" ref={reactFlowWrapper}>
+          {!showNodePalette && (
+            <button
+              onClick={() => setShowNodePalette(true)}
+              className="absolute left-4 top-4 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border2)', color: 'var(--text-dim)' }}
+            >
+              <PanelLeftOpen size={13} />
+              Palette
+            </button>
+          )}
           <ReactFlow
             nodes={nodes}
             edges={edges}

@@ -1,8 +1,8 @@
 import { Handle, Position } from 'reactflow'
-import { Brain, Zap, Settings } from 'lucide-react'
+import { Brain, Code2, Globe, GitBranch, Zap } from 'lucide-react'
 import { useGraphStore } from '../../hooks/useGraphStore'
 
-const NodeBase = ({ id, data, type, icon: Icon, color, glowClass }) => {
+const NodeBase = ({ id, data, type, icon: Icon, color, glowClass, headerLabel }) => {
   const { selectNode, selectedNode, agent } = useGraphStore()
   const isSelected = selectedNode?.id === id
   const isEntry = agent?.entry_node === id
@@ -28,7 +28,7 @@ const NodeBase = ({ id, data, type, icon: Icon, color, glowClass }) => {
       >
         <Icon size={13} style={{ color }} />
         <span className="text-xs font-mono font-semibold uppercase tracking-widest" style={{ color }}>
-          {type === 'llmNode' ? 'LLM Call' : 'Functional'}
+          {headerLabel || (type === 'llmNode' ? 'LLM Call' : 'Functional')}
         </span>
         {isEntry && (
           <span className="ml-auto text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--success)', color: '#fff', fontSize: '9px' }}>
@@ -75,12 +75,30 @@ const NodeMeta = ({ data, type }) => {
 }
 
 export const LLMNode = (props) => (
-  <NodeBase {...props} type="llmNode" icon={Brain} color="#7c3aed" glowClass="node-llm" />
+  <NodeBase {...props} type="llmNode" icon={Brain} color="#7c3aed" glowClass="node-llm" headerLabel="LLM Call" />
 )
 
-export const FunctionalNode = (props) => (
-  <NodeBase {...props} type="functionalNode" icon={Zap} color="#0ea5e9" glowClass="node-functional" />
-)
+const FUNCTION_VISUALS = {
+  python_inline: { icon: Code2, color: '#0ea5e9', label: 'Python Fn' },
+  api_call: { icon: Globe, color: '#10b981', label: 'API Call' },
+  data_transform: { icon: GitBranch, color: '#f59e0b', label: 'Transform' },
+}
+
+export const FunctionalNode = (props) => {
+  const fnType = props?.data?.config?.function_type || 'python_inline'
+  const visual = FUNCTION_VISUALS[fnType] || { icon: Zap, color: '#0ea5e9', label: 'Functional' }
+
+  return (
+    <NodeBase
+      {...props}
+      type="functionalNode"
+      icon={visual.icon}
+      color={visual.color}
+      glowClass="node-functional"
+      headerLabel={visual.label}
+    />
+  )
+}
 
 export const nodeTypes = {
   llmNode: LLMNode,
