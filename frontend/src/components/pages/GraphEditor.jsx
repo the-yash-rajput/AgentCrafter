@@ -34,6 +34,9 @@ const GraphEditorInner = () => {
   const [loading, setLoading] = useState(true)
   const [showSchemaEditor, setShowSchemaEditor] = useState(false)
   const [showRunModal, setShowRunModal] = useState(false)
+  const [showConfigPanel, setShowConfigPanel] = useState(true)
+  const [configPanelWidth, setConfigPanelWidth] = useState(320)
+  const [isResizingPanel, setIsResizingPanel] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -127,9 +130,46 @@ const GraphEditorInner = () => {
     }
   }, [agentId, storeAddEdge])
 
-  const onNodeClick = useCallback((_, node) => selectNode(node), [selectNode])
-  const onEdgeClick = useCallback((_, edge) => selectEdge(edge), [selectEdge])
+  const onNodeClick = useCallback((_, node) => {
+    setShowConfigPanel(true)
+    selectNode(node)
+  }, [selectNode])
+  const onEdgeClick = useCallback((_, edge) => {
+    setShowConfigPanel(true)
+    selectEdge(edge)
+  }, [selectEdge])
   const onPaneClick = useCallback(() => clearSelection(), [clearSelection])
+
+  const startPanelResize = useCallback((event) => {
+    event.preventDefault()
+    setIsResizingPanel(true)
+  }, [])
+
+  useEffect(() => {
+    if (!isResizingPanel) return
+
+    const minWidth = 280
+    const maxWidth = 620
+
+    const onMove = (event) => {
+      const nextWidth = Math.min(maxWidth, Math.max(minWidth, window.innerWidth - event.clientX))
+      setConfigPanelWidth(nextWidth)
+    }
+
+    const onUp = () => setIsResizingPanel(false)
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+
+    return () => {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [isResizingPanel])
 
   if (loading) {
     return (
@@ -181,7 +221,20 @@ const GraphEditorInner = () => {
           </ReactFlow>
         </div>
 
-        <ConfigPanel />
+        {showConfigPanel && (
+          <div
+            onMouseDown={startPanelResize}
+            className="w-1 cursor-col-resize transition-colors"
+            style={{ background: isResizingPanel ? 'rgba(99,102,241,0.45)' : 'transparent' }}
+          />
+        )}
+
+        {showConfigPanel && (
+          <ConfigPanel
+            panelWidth={configPanelWidth}
+            onClosePanel={() => setShowConfigPanel(false)}
+          />
+        )}
       </div>
 
       {showSchemaEditor && (

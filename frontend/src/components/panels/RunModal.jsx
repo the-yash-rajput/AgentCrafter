@@ -66,7 +66,14 @@ const SnapshotItem = ({ snapshot, index }) => {
 }
 
 export const RunModal = ({ agent, onClose }) => {
-  const [inputJson, setInputJson] = useState('{\n  \n}')
+  const [inputJson, setInputJson] = useState(JSON.stringify({
+    messages: [
+      { role: 'user', content: 'I need a quote for my car' }
+    ],
+    current_phase: 'pre_data_collection',
+    collected_data: {},
+    uploaded_documents: [],
+  }, null, 2))
   const [result, setResult] = useState(null)
   const [running, setRunning] = useState(false)
 
@@ -96,7 +103,7 @@ export const RunModal = ({ agent, onClose }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.8)' }}>
       <div
-        className="w-[900px] max-h-[85vh] flex flex-col rounded-2xl fade-in"
+        className="w-[1100px] max-w-[95vw] h-[90vh] flex flex-col rounded-2xl fade-in"
         style={{ background: 'var(--surface)', border: '1px solid var(--border2)' }}
       >
         {/* Header */}
@@ -113,20 +120,30 @@ export const RunModal = ({ agent, onClose }) => {
           <button onClick={onClose}><X size={16} style={{ color: 'var(--text-muted)' }} /></button>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* Input */}
-          <div className="w-64 flex flex-col border-r" style={{ borderColor: 'var(--border)' }}>
+          <div className="w-[420px] min-w-[360px] flex flex-col min-h-0 border-r" style={{ borderColor: 'var(--border)' }}>
             <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
               <p className="text-xs font-mono uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Input JSON</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                Edit the payload and click Run.
+              </p>
             </div>
-            <div className="flex-1">
+            <div className="flex-1 min-h-[260px]">
               <Editor
                 height="100%"
                 defaultLanguage="json"
                 value={inputJson}
-                onChange={v => setInputJson(v)}
+                onChange={v => setInputJson(v || '')}
                 theme="vs-dark"
-                options={{ minimap: { enabled: false }, fontSize: 12, lineNumbers: 'off' }}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 13,
+                  lineNumbers: 'on',
+                  scrollBeyondLastLine: false,
+                  wordWrap: 'on',
+                  automaticLayout: true,
+                }}
               />
             </div>
             <div className="p-4">
@@ -142,7 +159,7 @@ export const RunModal = ({ agent, onClose }) => {
           </div>
 
           {/* Output */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             {!result && !running && (
               <div className="flex-1 flex items-center justify-center">
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Set input JSON and click Run</p>

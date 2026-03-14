@@ -380,7 +380,7 @@ const EdgeConfigPanel = ({ edge, onClose }) => {
 
 // ─── Main Config Panel ─────────────────────────────────────────────────────────
 
-export const ConfigPanel = () => {
+export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
   const { selectedNode, selectedEdge, clearSelection, agent, updateNodeData, removeNode } = useGraphStore()
   const [config, setConfig] = useState({})
   const [name, setName] = useState('')
@@ -396,16 +396,27 @@ export const ConfigPanel = () => {
   if (!selectedNode && !selectedEdge) {
     return (
       <div
-        className="w-80 flex flex-col items-center justify-center h-full"
-        style={{ background: 'var(--surface)', borderLeft: '1px solid var(--border)' }}
+        className="flex flex-col h-full"
+        style={{ width: `${panelWidth}px`, background: 'var(--surface)', borderLeft: '1px solid var(--border)' }}
       >
-        <div className="text-center p-6">
+        <div className="flex items-center justify-end px-3 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+          <button
+            onClick={onClosePanel}
+            className="p-1.5 rounded hover:bg-white/5 transition-colors"
+            title="Close panel"
+          >
+            <X size={14} style={{ color: 'var(--text-muted)' }} />
+          </button>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center p-6">
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3"
                style={{ background: 'var(--surface2)', border: '1px solid var(--border2)' }}>
             <Zap size={20} style={{ color: 'var(--text-muted)' }} />
           </div>
           <p className="text-sm font-semibold text-white">No selection</p>
           <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Click a node or edge to configure it</p>
+          </div>
         </div>
       </div>
     )
@@ -413,7 +424,10 @@ export const ConfigPanel = () => {
 
   if (selectedEdge) {
     return (
-      <div className="w-80 flex flex-col h-full" style={{ background: 'var(--surface)', borderLeft: '1px solid var(--border)' }}>
+      <div
+        className="flex flex-col h-full"
+        style={{ width: `${panelWidth}px`, background: 'var(--surface)', borderLeft: '1px solid var(--border)' }}
+      >
         <EdgeConfigPanel edge={selectedEdge} onClose={clearSelection} />
       </div>
     )
@@ -467,7 +481,10 @@ export const ConfigPanel = () => {
   }
 
   return (
-    <div className="w-80 flex flex-col h-full" style={{ background: 'var(--surface)', borderLeft: '1px solid var(--border)' }}>
+    <div
+      className="flex flex-col h-full"
+      style={{ width: `${panelWidth}px`, background: 'var(--surface)', borderLeft: '1px solid var(--border)' }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
         <div className="flex items-center gap-2">
