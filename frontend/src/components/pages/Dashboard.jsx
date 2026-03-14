@@ -242,7 +242,7 @@ export const Dashboard = () => {
               <GitBranch size={16} color="#fff" />
             </div>
             <div>
-              <h1 className="text-base font-semibold text-white font-mono">LangGraph Builder</h1>
+              <h1 className="text-base font-semibold text-white font-mono">Agent Crafter</h1>
               <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Visual AI workflow designer</p>
             </div>
           </div>
@@ -280,7 +280,7 @@ export const Dashboard = () => {
             </div>
             <h2 className="text-lg font-semibold text-white mb-2">No agents yet</h2>
             <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
-              Create your first LangGraph workflow to get started
+              Create your first workflow in Agent Crafter to get started
             </p>
             <button
               onClick={() => setShowCreate(true)}

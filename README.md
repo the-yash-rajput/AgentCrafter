@@ -1,6 +1,6 @@
-# LangGraph Builder
+# Agent Crafter
 
-A full-stack **visual LangGraph workflow builder** where you can design, configure, and execute AI agent graphs through a drag-and-drop interface. All configuration is persisted in PostgreSQL and fetched at runtime.
+A full-stack **visual AI workflow builder** powered by LangGraph, where you can design, configure, and execute agent graphs through a drag-and-drop interface. All configuration is persisted in PostgreSQL and fetched at runtime.
 
 ## Architecture
 
@@ -34,7 +34,7 @@ A full-stack **visual LangGraph workflow builder** where you can design, configu
 
 ```bash
 # 1. Clone and enter directory
-cd langgraph-builder
+cd AgentCrafter
 
 # 2. Set up environment
 cp .env.example .env

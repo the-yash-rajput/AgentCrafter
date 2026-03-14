@@ -4,8 +4,8 @@ from db.session import create_tables
 from api import agents, nodes, edges, runs
 
 app = FastAPI(
-    title="LangGraph Builder API",
-    description="Visual LangGraph workflow builder — configure, store, and run AI agent graphs",
+    title="Agent Crafter API",
+    description="Visual AI workflow builder powered by LangGraph — configure, store, and run agent graphs",
     version="1.0.0",
 )
 
@@ -31,4 +31,4 @@ app.include_router(runs.router, prefix="/api")
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "LangGraph Builder"}
+    return {"status": "ok", "service": "Agent Crafter"}
