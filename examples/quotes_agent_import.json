@@ -1,0 +1,517 @@
+{
+  "agent": {
+    "name": "Quotes Agent (Imported)",
+    "description": "Graph import that recreates the quotes_agent orchestration flow with phase routing, pre-data collection, data confirmation, quote processing, addons, and fallback.",
+    "input_schema": {
+      "messages": {
+        "type": "array",
+        "description": "Conversation history as list of {role, content}"
+      },
+      "current_phase": {
+        "type": "string",
+        "default": "pre_data_collection"
+      },
+      "collected_data": {
+        "type": "object",
+        "default": {}
+      },
+      "uploaded_documents": {
+        "type": "array",
+        "default": []
+      }
+    },
+    "output_schema": {
+      "messages": {
+        "type": "array"
+      },
+      "last_response": {
+        "type": "string"
+      },
+      "current_phase": {
+        "type": "string"
+      },
+      "collected_data": {
+        "type": "object"
+      },
+      "upload_doc_response": {
+        "type": "object"
+      },
+      "process_qis_response": {
+        "type": "object"
+      },
+      "quote_created": {
+        "type": "boolean"
+      }
+    },
+    "state_schema": {
+      "retry_count": {
+        "type": "number",
+        "default": 0
+      },
+      "trigger_fallback": {
+        "type": "boolean",
+        "default": false
+      },
+      "is_vertical_asked": {
+        "type": "boolean",
+        "default": false
+      },
+      "is_asked_about_dp": {
+        "type": "boolean",
+        "default": false
+      },
+      "is_upload_doc_done": {
+        "type": "boolean",
+        "default": false
+      },
+      "is_form_complete": {
+        "type": "boolean",
+        "default": false
+      },
+      "quote_created": {
+        "type": "boolean",
+        "default": false
+      },
+      "next_field_to_ask": {
+        "type": "object",
+        "default": null
+      },
+      "final_message_context": {
+        "type": "string",
+        "default": ""
+      }
+    },
+    "entry_node": "is_user_frustrated_node",
+    "exit_node": "final_message_processing_node"
+  },
+  "nodes": [
+    {
+      "name": "is_user_frustrated_node",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    s = dict(state or {})\n    s.setdefault(\"messages\", [])\n    s.setdefault(\"retry_count\", 0)\n    s.setdefault(\"current_phase\", \"pre_data_collection\")\n    s.setdefault(\"trigger_fallback\", False)\n\n    def _content(msg):\n        if isinstance(msg, dict):\n            return str(msg.get(\"content\", \"\"))\n        return str(getattr(msg, \"content\", msg))\n\n    def _role(msg):\n        if isinstance(msg, dict):\n            return str(msg.get(\"role\", \"\")).lower()\n        return \"\"\n\n    last_user = \"\"\n    for m in reversed(s[\"messages\"]):\n        role = _role(m)\n        if role in (\"\", \"user\", \"human\"):\n            txt = _content(m).strip()\n            if txt:\n                last_user = txt\n                break\n\n    text = last_user.lower()\n    frustration_terms = [\n        \"frustrated\", \"angry\", \"useless\", \"waste\", \"not working\", \"still not\", \"again\", \"fed up\",\n        \"irritating\", \"annoying\", \"bad service\", \"terrible\", \"horrible\", \"wtf\"\n    ]\n    frustrated = any(term in text for term in frustration_terms) and (\"i'm done\" not in text and \"im done\" not in text)\n\n    if frustrated:\n        if s.get(\"retry_count\", 0) < 2:\n            s[\"retry_count\"] = s.get(\"retry_count\", 0) + 1\n            last_ai = \"\"\n            for m in reversed(s[\"messages\"]):\n                role = _role(m)\n                if role in (\"assistant\", \"ai\"):\n                    last_ai = _content(m).strip()\n                    break\n            if last_ai:\n                s[\"final_message_context\"] = f\"Apologize briefly, then restate this clearly: {last_ai}\"\n            else:\n                s[\"final_message_context\"] = \"Apologize briefly and ask the user to continue with the quote details.\"\n            s[\"__route\"] = \"final_message_processing_node\"\n        else:\n            s[\"trigger_fallback\"] = True\n            s[\"final_message_context\"] = \"User appears repeatedly frustrated. Move to fallback flow.\"\n            s[\"__route\"] = \"fallback_node\"\n    else:\n        s[\"retry_count\"] = 0\n        s[\"final_message_context\"] = None\n        s[\"__route\"] = \"router_node\"\n\n    return s\n"
+        }
+      },
+      "position_x": 50,
+      "position_y": 220
+    },
+    {
+      "name": "router_node",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    s = dict(state or {})\n    phase = s.get(\"current_phase\", \"pre_data_collection\")\n    route_map = {\n        \"pre_data_collection\": \"pre_data_collection_node\",\n        \"initiation\": \"data_collection_agent\",\n        \"data_collection\": \"data_collection_agent\",\n        \"data_confirmation\": \"data_confirmation_node\",\n        \"quote_processing\": \"quotes_processing_agent\",\n        \"addons\": \"addons_node\",\n        \"completed\": \"final_message_processing_node\",\n        \"error\": \"fallback_node\",\n    }\n    s[\"__route\"] = route_map.get(phase, \"fallback_node\")\n    return s\n"
+        }
+      },
+      "position_x": 280,
+      "position_y": 220
+    },
+    {
+      "name": "pre_data_collection_node",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "import re\n\ndef run(state):\n    s = dict(state or {})\n    s.setdefault(\"collected_data\", {})\n    s.setdefault(\"messages\", [])\n    s.setdefault(\"is_vertical_asked\", False)\n    s.setdefault(\"is_asked_about_dp\", False)\n\n    def _content(msg):\n        if isinstance(msg, dict):\n            return str(msg.get(\"content\", \"\"))\n        return str(getattr(msg, \"content\", msg))\n\n    last_user = \"\"\n    for m in reversed(s[\"messages\"]):\n        txt = _content(m).strip()\n        if txt:\n            last_user = txt\n            break\n\n    text = last_user.lower()\n    collected = dict(s.get(\"collected_data\") or {})\n\n    vertical_aliases = {\n        \"FW\": [\"fw\", \"four wheeler\", \"car\", \"private car\"],\n        \"GCV\": [\"gcv\", \"goods carrying\", \"truck\"],\n        \"MISCD\": [\"miscd\", \"misc\", \"miscellaneous\"],\n        \"PCV\": [\"pcv\", \"passenger carrying\", \"bus\", \"taxi\"],\n    }\n\n    def detect_vertical(t):\n        for key, aliases in vertical_aliases.items():\n            if any(a in t for a in aliases):\n                return key\n        return None\n\n    vertical = collected.get(\"vertical\")\n    if not vertical:\n        found_vertical = detect_vertical(text) if s.get(\"is_vertical_asked\") else None\n        if found_vertical:\n            collected[\"vertical\"] = found_vertical\n            s[\"collected_data\"] = collected\n        else:\n            s[\"next_field_to_ask\"] = {\n                \"field_name\": \"vertical\",\n                \"field_type\": \"enum\",\n                \"required\": True,\n                \"options\": [{\"value\": k, \"enum\": v[0].upper()} for k, v in vertical_aliases.items()],\n                \"prompt\": \"Please select insurance vertical: FW, GCV, MISCD, or PCV.\",\n            }\n            s[\"is_vertical_asked\"] = True\n            s[\"current_phase\"] = \"pre_data_collection\"\n            s[\"__route\"] = \"final_message_processing_node\"\n            return s\n\n    dp_details = (s.get(\"collected_data\") or {}).get(\"dp_details\")\n    if not dp_details:\n        if not s.get(\"is_asked_about_dp\"):\n            s[\"next_field_to_ask\"] = {\n                \"field_name\": \"dp_name_or_dp_no\",\n                \"field_type\": \"string\",\n                \"required\": True,\n                \"prompt\": \"Please provide DP Name or DP Number.\",\n            }\n            s[\"is_asked_about_dp\"] = True\n            s[\"current_phase\"] = \"pre_data_collection\"\n            s[\"__route\"] = \"final_message_processing_node\"\n            return s\n\n        dp_no_match = re.search(r\"(?:dp\\s*[-_ ]?no|dp\\s*number|dp)\\s*[:#-]?\\s*([a-z0-9-]{3,})\", text)\n        dp_name_match = re.search(r\"(?:dp\\s*name)\\s*[:=-]\\s*([a-z0-9 ._-]{3,})\", text)\n\n        if dp_no_match or dp_name_match:\n            dp_no = dp_no_match.group(1).upper() if dp_no_match else \"UNKNOWN\"\n            dp_name = dp_name_match.group(1).strip().title() if dp_name_match else f\"DP {dp_no}\"\n            collected = dict(s.get(\"collected_data\") or {})\n            collected[\"dp_details\"] = {\n                \"dp_partner_id\": f\"DP-{dp_no}\",\n                \"dp_no\": dp_no,\n                \"dp_name\": dp_name,\n            }\n            s[\"collected_data\"] = collected\n            s[\"next_field_to_ask\"] = None\n            s[\"current_phase\"] = \"initiation\"\n            s[\"__route\"] = \"data_collection_agent\"\n            return s\n\n        s[\"next_field_to_ask\"] = {\n            \"field_name\": \"dp_name_or_dp_no\",\n            \"field_type\": \"string\",\n            \"required\": True,\n            \"prompt\": \"I could not find DP details from your message. Please share DP Name or DP Number in clear format.\",\n        }\n        s[\"__route\"] = \"final_message_processing_node\"\n        return s\n\n    s[\"current_phase\"] = \"initiation\"\n    s[\"next_field_to_ask\"] = None\n    s[\"__route\"] = \"data_collection_agent\"\n    return s\n"
+        }
+      },
+      "position_x": 520,
+      "position_y": 80
+    },
+    {
+      "name": "data_collection_agent",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "import re\n\ndef run(state):\n    s = dict(state or {})\n    s.setdefault(\"messages\", [])\n    s.setdefault(\"collected_data\", {})\n    s.setdefault(\"trigger_fallback\", False)\n\n    def _content(msg):\n        if isinstance(msg, dict):\n            return str(msg.get(\"content\", \"\"))\n        return str(getattr(msg, \"content\", msg))\n\n    try:\n        last_user = \"\"\n        for m in reversed(s[\"messages\"]):\n            txt = _content(m).strip()\n            if txt:\n                last_user = txt\n                break\n\n        text = last_user\n        lower = text.lower()\n        collected = dict(s.get(\"collected_data\") or {})\n\n        for k, v in re.findall(r\"([a-zA-Z_][a-zA-Z0-9_ ]{1,40})\\s*[:=]\\s*([^,;\\n]+)\", text):\n            key = k.strip().lower().replace(\" \", \"_\")\n            collected[key] = v.strip()\n\n        mobile_match = re.search(r\"\\b(\\d{10})\\b\", lower)\n        if mobile_match:\n            collected.setdefault(\"mobile_number\", mobile_match.group(1))\n\n        veh_match = re.search(r\"\\b([A-Z]{2}\\d{1,2}[A-Z]{1,3}\\d{3,4})\\b\", text.replace(\"-\", \"\").upper())\n        if veh_match:\n            collected.setdefault(\"vehicle_number\", veh_match.group(1))\n\n        date_match = re.search(r\"\\b(\\d{4}-\\d{2}-\\d{2}|\\d{2}/\\d{2}/\\d{4})\\b\", text)\n        if date_match:\n            collected.setdefault(\"policy_expiry_date\", date_match.group(1))\n\n        if \"name is\" in lower and \"full_name\" not in collected:\n            maybe = text.split(\"name is\", 1)[-1].strip(\" .\")\n            if maybe:\n                collected[\"full_name\"] = maybe\n\n        required_fields = [\"full_name\", \"mobile_number\", \"vehicle_number\", \"policy_expiry_date\"]\n        missing = [f for f in required_fields if not collected.get(f)]\n\n        s[\"collected_data\"] = collected\n\n        if missing:\n            field = missing[0]\n            s[\"is_form_complete\"] = False\n            s[\"current_phase\"] = \"data_collection\"\n            s[\"next_field_to_ask\"] = {\n                \"field_name\": field,\n                \"field_type\": \"string\",\n                \"required\": True,\n                \"prompt\": f\"Please provide {field.replace('_', ' ')}.\",\n            }\n            s[\"send_now\"] = False\n            s[\"__route\"] = \"final_message_processing_node\"\n            return s\n\n        summary_lines = []\n        for k, v in collected.items():\n            if k == \"dp_details\" and isinstance(v, dict):\n                summary_lines.append(\"dp_details:\")\n                for nk, nv in v.items():\n                    if nk != \"dp_partner_id\":\n                        summary_lines.append(f\"  - {nk}: {nv}\")\n            else:\n                summary_lines.append(f\"{k}: {v}\")\n\n        s[\"is_form_complete\"] = True\n        s[\"current_phase\"] = \"data_confirmation\"\n        s[\"next_field_to_ask\"] = None\n        s[\"final_message_context\"] = \"Please confirm these details:\\n\" + \"\\n\".join(summary_lines)\n        s[\"send_now\"] = False\n        s[\"__route\"] = \"final_message_processing_node\"\n        return s\n\n    except Exception as exc:\n        s[\"trigger_fallback\"] = True\n        s[\"final_message_context\"] = f\"Data collection failed: {exc}\"\n        s[\"__route\"] = \"fallback_node\"\n        return s\n"
+        }
+      },
+      "position_x": 520,
+      "position_y": 220
+    },
+    {
+      "name": "data_confirmation_node",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    s = dict(state or {})\n    s.setdefault(\"messages\", [])\n\n    def _content(msg):\n        if isinstance(msg, dict):\n            return str(msg.get(\"content\", \"\"))\n        return str(getattr(msg, \"content\", msg))\n\n    last_user = \"\"\n    for m in reversed(s[\"messages\"]):\n        txt = _content(m).strip()\n        if txt:\n            last_user = txt\n            break\n\n    text = last_user.lower()\n    confirmed_terms = [\"yes\", \"confirm\", \"looks good\", \"correct\", \"all good\", \"okay proceed\"]\n    rejected_terms = [\"no\", \"wrong\", \"change\", \"edit\", \"incorrect\", \"update\"]\n\n    confirmed = any(t in text for t in confirmed_terms)\n    rejected = any(t in text for t in rejected_terms)\n\n    if confirmed and not rejected:\n        s[\"current_phase\"] = \"quote_processing\"\n        s[\"final_message_context\"] = None\n        s[\"__route\"] = \"quotes_processing_agent\"\n        return s\n\n    if rejected:\n        kept = {}\n        for k in [\"vertical\", \"dp_details\"]:\n            if k in (s.get(\"collected_data\") or {}):\n                kept[k] = s[\"collected_data\"][k]\n        s[\"collected_data\"] = kept\n        s[\"current_phase\"] = \"data_collection\"\n        s[\"is_form_complete\"] = False\n        s[\"final_message_context\"] = \"Understood. Please send the fields you want to change and their updated values.\"\n        s[\"__route\"] = \"final_message_processing_node\"\n        return s\n\n    s[\"current_phase\"] = \"data_confirmation\"\n    s[\"final_message_context\"] = \"I could not clearly understand that. Please confirm if the shared details are correct.\"\n    s[\"__route\"] = \"final_message_processing_node\"\n    return s\n"
+        }
+      },
+      "position_x": 520,
+      "position_y": 360
+    },
+    {
+      "name": "quotes_processing_agent",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "import uuid\nfrom datetime import datetime\n\ndef run(state):\n    s = dict(state or {})\n    s.setdefault(\"collected_data\", {})\n    s.setdefault(\"trigger_fallback\", False)\n\n    if s.get(\"trigger_fallback\"):\n        s[\"__route\"] = \"fallback_node\"\n        return s\n\n    try:\n        if not s.get(\"is_upload_doc_done\"):\n            uid = uuid.uuid4().hex[:10].upper()\n            thread_id = str(s.get(\"thread_id\") or s.get(\"session_id\") or \"\")\n            s[\"upload_doc_response\"] = {\n                \"isComplete\": True,\n                \"threadId\": thread_id,\n                \"requestId\": f\"REQ-{uid}\",\n                \"turtleDocCaseId\": f\"CASE-{uid}\",\n                \"ticketId\": f\"TKT-{uid}\",\n            }\n            s[\"is_upload_doc_done\"] = True\n\n        required = [\"full_name\", \"mobile_number\", \"vehicle_number\", \"policy_expiry_date\"]\n        missing = [k for k in required if not (s.get(\"collected_data\") or {}).get(k)]\n\n        if missing:\n            field = missing[0]\n            s[\"process_qis_response\"] = {\n                \"resultType\": \"QUOTES_REQUEST\",\n                \"newly_extracted_fields\": {},\n                \"validation_errors\": {field: \"Required field missing\"},\n            }\n            s[\"next_field_to_ask\"] = {\n                \"field_name\": field,\n                \"field_type\": \"string\",\n                \"required\": True,\n                \"prompt\": f\"Please provide {field.replace('_', ' ')} to continue quote processing.\",\n            }\n            s[\"quote_created\"] = False\n            s[\"current_phase\"] = \"data_collection\"\n            s[\"__route\"] = \"final_message_processing_node\"\n            return s\n\n        s[\"process_qis_response\"] = {\n            \"resultType\": \"AUTOMATED\",\n            \"newly_extracted_fields\": {},\n            \"validation_errors\": {},\n            \"processed_at\": datetime.utcnow().isoformat(),\n        }\n        s[\"quote_created\"] = True\n        s[\"current_phase\"] = \"addons\"\n        s[\"final_message_context\"] = \"Quote request was processed successfully. Proceeding to addons step.\"\n        s[\"__route\"] = \"final_message_processing_node\"\n        return s\n\n    except Exception as exc:\n        s[\"trigger_fallback\"] = True\n        s[\"final_message_context\"] = f\"Quote processing failed: {exc}\"\n        s[\"__route\"] = \"fallback_node\"\n        return s\n"
+        }
+      },
+      "position_x": 780,
+      "position_y": 220
+    },
+    {
+      "name": "addons_node",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    s = dict(state or {})\n    if s.get(\"trigger_fallback\"):\n        s[\"__route\"] = \"fallback_node\"\n        return s\n\n    if s.get(\"quote_created\"):\n        s[\"current_phase\"] = \"completed\"\n        s[\"final_message_context\"] = (\n            \"Since addons were not selected during this step, the quote has been created without addons. \"\n            \"You can still add addons later from the quote page.\"\n        )\n        s[\"__route\"] = \"final_message_processing_node\"\n        return s\n\n    s[\"trigger_fallback\"] = True\n    s[\"final_message_context\"] = \"Addons step could not be completed due to missing quote context.\"\n    s[\"__route\"] = \"fallback_node\"\n    return s\n"
+        }
+      },
+      "position_x": 1020,
+      "position_y": 220
+    },
+    {
+      "name": "fallback_node",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    s = dict(state or {})\n    s[\"current_phase\"] = s.get(\"current_phase\") or \"error\"\n    s[\"final_message_context\"] = (\n        \"There seems to be an issue in the automated flow. \"\n        \"Please continue from assisted support or retry with complete details.\"\n    )\n    s[\"trigger_fallback\"] = False\n    s[\"__route\"] = \"final_message_processing_node\"\n    return s\n"
+        }
+      },
+      "position_x": 780,
+      "position_y": 420
+    },
+    {
+      "name": "final_message_processing_node",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    s = dict(state or {})\n    s.setdefault(\"messages\", [])\n\n    next_field = s.get(\"next_field_to_ask\")\n    context = s.get(\"final_message_context\")\n    phase = s.get(\"current_phase\")\n\n    if next_field:\n        prompt = next_field.get(\"prompt\") or f\"Please provide {next_field.get('field_name', 'the next required field')}.\"\n        options = next_field.get(\"options\") or []\n        if options:\n            rendered = []\n            for opt in options:\n                if isinstance(opt, dict):\n                    label = opt.get(\"enum\") or opt.get(\"value\")\n                    value = opt.get(\"value\")\n                    rendered.append(f\"- {label} ({value})\")\n                else:\n                    rendered.append(f\"- {opt}\")\n            message = prompt + \"\\nOptions:\\n\" + \"\\n\".join(rendered)\n        else:\n            message = prompt\n    elif context:\n        message = str(context)\n    else:\n        if phase == \"addons\" and s.get(\"quote_created\"):\n            message = \"Please select your addons. If not needed, submit without addons.\"\n        elif phase == \"quote_processing\":\n            message = \"Please wait while your quote is being processed.\"\n        elif phase == \"completed\":\n            message = \"Quote journey completed successfully.\"\n        else:\n            message = \"Please share the next detail to continue.\"\n\n    s[\"messages\"] = list(s.get(\"messages\") or []) + [{\"role\": \"assistant\", \"content\": message}]\n    s[\"last_response\"] = message\n    s[\"next_field_to_ask\"] = None\n    s[\"final_message_context\"] = \"\"\n    s[\"send_now\"] = True\n    return s\n"
+        }
+      },
+      "position_x": 1250,
+      "position_y": 220
+    },
+    {
+      "name": "end_node",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    return dict(state or {})\n"
+        }
+      },
+      "position_x": 1450,
+      "position_y": 220
+    }
+  ],
+  "edges": [
+    {
+      "source_node_id": "is_user_frustrated_node",
+      "target_node_id": "router_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "router_node"
+        }
+      },
+      "label": "router_node"
+    },
+    {
+      "source_node_id": "is_user_frustrated_node",
+      "target_node_id": "fallback_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "fallback_node"
+        }
+      },
+      "label": "fallback_node"
+    },
+    {
+      "source_node_id": "is_user_frustrated_node",
+      "target_node_id": "final_message_processing_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "final_message_processing_node"
+        }
+      },
+      "label": "final_message_processing_node"
+    },
+    {
+      "source_node_id": "router_node",
+      "target_node_id": "pre_data_collection_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "pre_data_collection_node"
+        }
+      },
+      "label": "pre_data_collection_node"
+    },
+    {
+      "source_node_id": "router_node",
+      "target_node_id": "data_collection_agent",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "data_collection_agent"
+        }
+      },
+      "label": "data_collection_agent"
+    },
+    {
+      "source_node_id": "router_node",
+      "target_node_id": "data_confirmation_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "data_confirmation_node"
+        }
+      },
+      "label": "data_confirmation_node"
+    },
+    {
+      "source_node_id": "router_node",
+      "target_node_id": "quotes_processing_agent",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "quotes_processing_agent"
+        }
+      },
+      "label": "quotes_processing_agent"
+    },
+    {
+      "source_node_id": "router_node",
+      "target_node_id": "addons_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "addons_node"
+        }
+      },
+      "label": "addons_node"
+    },
+    {
+      "source_node_id": "router_node",
+      "target_node_id": "final_message_processing_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "final_message_processing_node"
+        }
+      },
+      "label": "final_message_processing_node"
+    },
+    {
+      "source_node_id": "router_node",
+      "target_node_id": "fallback_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "fallback_node"
+        }
+      },
+      "label": "fallback_node"
+    },
+    {
+      "source_node_id": "pre_data_collection_node",
+      "target_node_id": "data_collection_agent",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "data_collection_agent"
+        }
+      },
+      "label": "data_collection_agent"
+    },
+    {
+      "source_node_id": "pre_data_collection_node",
+      "target_node_id": "final_message_processing_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "final_message_processing_node"
+        }
+      },
+      "label": "final_message_processing_node"
+    },
+    {
+      "source_node_id": "pre_data_collection_node",
+      "target_node_id": "fallback_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "fallback_node"
+        }
+      },
+      "label": "fallback_node"
+    },
+    {
+      "source_node_id": "data_collection_agent",
+      "target_node_id": "final_message_processing_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "final_message_processing_node"
+        }
+      },
+      "label": "final_message_processing_node"
+    },
+    {
+      "source_node_id": "data_collection_agent",
+      "target_node_id": "fallback_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "fallback_node"
+        }
+      },
+      "label": "fallback_node"
+    },
+    {
+      "source_node_id": "data_collection_agent",
+      "target_node_id": "end_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "end_node"
+        }
+      },
+      "label": "end_node"
+    },
+    {
+      "source_node_id": "data_confirmation_node",
+      "target_node_id": "quotes_processing_agent",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "quotes_processing_agent"
+        }
+      },
+      "label": "quotes_processing_agent"
+    },
+    {
+      "source_node_id": "data_confirmation_node",
+      "target_node_id": "final_message_processing_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "final_message_processing_node"
+        }
+      },
+      "label": "final_message_processing_node"
+    },
+    {
+      "source_node_id": "data_confirmation_node",
+      "target_node_id": "fallback_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "fallback_node"
+        }
+      },
+      "label": "fallback_node"
+    },
+    {
+      "source_node_id": "quotes_processing_agent",
+      "target_node_id": "final_message_processing_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "final_message_processing_node"
+        }
+      },
+      "label": "final_message_processing_node"
+    },
+    {
+      "source_node_id": "quotes_processing_agent",
+      "target_node_id": "fallback_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "fallback_node"
+        }
+      },
+      "label": "fallback_node"
+    },
+    {
+      "source_node_id": "addons_node",
+      "target_node_id": "final_message_processing_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "final_message_processing_node"
+        }
+      },
+      "label": "final_message_processing_node"
+    },
+    {
+      "source_node_id": "addons_node",
+      "target_node_id": "fallback_node",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "__route",
+          "value": "fallback_node"
+        }
+      },
+      "label": "fallback_node"
+    },
+    {
+      "source_node_id": "fallback_node",
+      "target_node_id": "final_message_processing_node",
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    }
+  ]
+}

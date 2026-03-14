@@ -167,6 +167,8 @@ def import_agent(data: dict, db: Session = Depends(get_db)):
     for n in data.get("nodes", []):
         node = Node(agent_id=new_agent.id, **n)
         db.add(node)
+    # Ensure node rows exist before edge FK checks.
+    db.flush()
 
     for e in data.get("edges", []):
         edge = Edge(agent_id=new_agent.id, **e)
