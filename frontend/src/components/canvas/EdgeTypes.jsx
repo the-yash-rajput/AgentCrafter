@@ -1,4 +1,4 @@
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, getStraightPath } from 'reactflow'
+import { BaseEdge, EdgeLabelRenderer, getBezierPath } from 'reactflow'
 import { useGraphStore } from '../../hooks/useGraphStore'
 
 export const ConditionalEdge = ({
@@ -24,7 +24,6 @@ export const ConditionalEdge = ({
       {label && (
         <EdgeLabelRenderer>
           <div
-            style={{ transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`, pointerEvents: 'all' }}
             className="absolute px-2 py-0.5 rounded text-xs font-mono cursor-pointer"
             onClick={() => selectEdge({ id, data })}
             style={{

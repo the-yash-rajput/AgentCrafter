@@ -1,4 +1,3 @@
-import uuid
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -20,7 +19,7 @@ class GraphRunner:
     def __init__(self, db: Session):
         self.db = db
 
-    def compile_and_run(self, agent_id: str, input_data: dict) -> dict:
+    def compile_and_run(self, agent_id: int, input_data: dict) -> dict:
         """Fetch agent from DB, compile to LangGraph, and run it."""
         agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:
@@ -34,7 +33,6 @@ class GraphRunner:
 
         # Create run record
         run = Run(
-            id=uuid.uuid4(),
             agent_id=agent_id,
             status=RunStatus.running,
             input_data=input_data,
@@ -73,7 +71,7 @@ class GraphRunner:
             flush_langfuse()
 
             return {
-                "run_id": str(run.id),
+                "run_id": run.id,
                 "status": "success",
                 "output": current_state,
                 "snapshots": snapshots,
@@ -178,7 +176,7 @@ class GraphRunner:
 
         return wrapped
 
-    def validate_graph(self, agent_id: str) -> dict:
+    def validate_graph(self, agent_id: int) -> dict:
         """Validate the graph configuration."""
         agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:

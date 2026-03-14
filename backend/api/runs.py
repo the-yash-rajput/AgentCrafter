@@ -14,7 +14,7 @@ router = APIRouter(tags=["runs"])
 
 
 @router.post("/agents/{agent_id}/run", response_model=RunResponse)
-def run_agent(agent_id: str, payload: RunCreate, db: Session = Depends(get_db)):
+def run_agent(agent_id: int, payload: RunCreate, db: Session = Depends(get_db)):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -35,13 +35,13 @@ def run_agent(agent_id: str, payload: RunCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/agents/{agent_id}/validate")
-def validate_agent(agent_id: str, db: Session = Depends(get_db)):
+def validate_agent(agent_id: int, db: Session = Depends(get_db)):
     runner = GraphRunner(db)
     return runner.validate_graph(agent_id)
 
 
 @router.get("/runs/{run_id}", response_model=RunResponse)
-def get_run(run_id: str, db: Session = Depends(get_db)):
+def get_run(run_id: int, db: Session = Depends(get_db)):
     run = db.query(Run).filter(Run.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -49,12 +49,12 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/agents/{agent_id}/runs", response_model=List[RunResponse])
-def list_runs(agent_id: str, db: Session = Depends(get_db)):
+def list_runs(agent_id: int, db: Session = Depends(get_db)):
     return db.query(Run).filter(Run.agent_id == agent_id).order_by(Run.started_at.desc()).all()
 
 
 @router.get("/runs/{run_id}/stream")
-async def stream_run(run_id: str, db: Session = Depends(get_db)):
+async def stream_run(run_id: int, db: Session = Depends(get_db)):
     """SSE endpoint to stream run state snapshots."""
     async def event_generator() -> AsyncGenerator[str, None]:
         run = db.query(Run).filter(Run.id == run_id).first()

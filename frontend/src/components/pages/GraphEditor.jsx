@@ -117,7 +117,7 @@ const GraphEditorInner = () => {
 
       const newEdge = {
         ...params,
-        id: created.id,
+        id: String(created.id),
         type: 'default',
         data: created,
       }

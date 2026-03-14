@@ -20,7 +20,7 @@ export const useGraphStore = create((set, get) => ({
     }))
 
     const rfEdges = (agent.edges || []).map(e => ({
-      id: e.id,
+      id: String(e.id),
       source: e.source_node_id,
       target: e.target_node_id,
       type: e.edge_type === 'conditional' ? 'conditionalEdge' : 'default',

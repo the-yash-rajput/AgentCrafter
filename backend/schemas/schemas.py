@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Any, List
-from uuid import UUID
 from datetime import datetime
 from models.models import AgentStatus, NodeType, EdgeType, RunStatus
 
@@ -10,12 +9,12 @@ from models.models import AgentStatus, NodeType, EdgeType, RunStatus
 class AgentCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    input_schema: Optional[dict] = {}
-    output_schema: Optional[dict] = {}
-    state_schema: Optional[dict] = {}
+    input_schema: dict = Field(default_factory=dict)
+    output_schema: dict = Field(default_factory=dict)
+    state_schema: dict = Field(default_factory=dict)
     entry_node: Optional[str] = None
     exit_node: Optional[str] = None
-    metadata_: Optional[dict] = Field(default={}, alias="metadata")
+    metadata_: dict = Field(default_factory=dict, alias="metadata")
 
     class Config:
         populate_by_name = True
@@ -37,7 +36,7 @@ class AgentUpdate(BaseModel):
 
 
 class AgentResponse(BaseModel):
-    id: UUID
+    id: int
     name: str
     description: Optional[str]
     status: AgentStatus
@@ -46,7 +45,7 @@ class AgentResponse(BaseModel):
     state_schema: dict
     entry_node: Optional[str]
     exit_node: Optional[str]
-    metadata: dict = Field(default={}, alias="metadata_")
+    metadata: dict = Field(default_factory=dict, alias="metadata_")
     created_at: datetime
     updated_at: datetime
 
@@ -56,8 +55,8 @@ class AgentResponse(BaseModel):
 
 
 class AgentWithGraph(AgentResponse):
-    nodes: List["NodeResponse"] = []
-    edges: List["EdgeResponse"] = []
+    nodes: List["NodeResponse"] = Field(default_factory=list)
+    edges: List["EdgeResponse"] = Field(default_factory=list)
 
 
 # ─── Node Schemas ─────────────────────────────────────────────────────────────
@@ -65,9 +64,9 @@ class AgentWithGraph(AgentResponse):
 class NodeCreate(BaseModel):
     name: str
     type: NodeType
-    config: Optional[dict] = {}
-    position_x: Optional[float] = 0.0
-    position_y: Optional[float] = 0.0
+    config: dict = Field(default_factory=dict)
+    position_x: float = 0.0
+    position_y: float = 0.0
 
 
 class NodeUpdate(BaseModel):
@@ -78,8 +77,8 @@ class NodeUpdate(BaseModel):
 
 
 class NodeResponse(BaseModel):
-    id: UUID
-    agent_id: UUID
+    id: int
+    agent_id: int
     name: str
     type: NodeType
     config: dict
@@ -97,7 +96,7 @@ class EdgeCreate(BaseModel):
     source_node_id: str
     target_node_id: str
     edge_type: EdgeType = EdgeType.direct
-    condition_config: Optional[dict] = {}
+    condition_config: dict = Field(default_factory=dict)
     label: Optional[str] = None
 
 
@@ -108,8 +107,8 @@ class EdgeUpdate(BaseModel):
 
 
 class EdgeResponse(BaseModel):
-    id: UUID
-    agent_id: UUID
+    id: int
+    agent_id: int
     source_node_id: str
     target_node_id: str
     edge_type: EdgeType
@@ -124,12 +123,12 @@ class EdgeResponse(BaseModel):
 # ─── Run Schemas ──────────────────────────────────────────────────────────────
 
 class RunCreate(BaseModel):
-    input_data: dict = {}
+    input_data: dict = Field(default_factory=dict)
 
 
 class RunResponse(BaseModel):
-    id: UUID
-    agent_id: UUID
+    id: int
+    agent_id: int
     status: RunStatus
     input_data: dict
     output_data: dict

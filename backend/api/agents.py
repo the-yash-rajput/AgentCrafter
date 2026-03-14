@@ -1,7 +1,7 @@
-import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from db.session import get_db
 from models.models import Agent, Node, Edge, AgentStatus
@@ -13,7 +13,6 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 @router.post("", response_model=AgentResponse)
 def create_agent(payload: AgentCreate, db: Session = Depends(get_db)):
     agent = Agent(
-        id=uuid.uuid4(),
         name=payload.name,
         description=payload.description,
         input_schema=payload.input_schema or {},
@@ -24,7 +23,11 @@ def create_agent(payload: AgentCreate, db: Session = Depends(get_db)):
         metadata_=payload.metadata_ or {},
     )
     db.add(agent)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Invalid agent payload: {exc.orig}") from exc
     db.refresh(agent)
     return agent
 
@@ -35,7 +38,7 @@ def list_agents(db: Session = Depends(get_db)):
 
 
 @router.get("/{agent_id}", response_model=AgentWithGraph)
-def get_agent(agent_id: str, db: Session = Depends(get_db)):
+def get_agent(agent_id: int, db: Session = Depends(get_db)):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -43,7 +46,7 @@ def get_agent(agent_id: str, db: Session = Depends(get_db)):
 
 
 @router.put("/{agent_id}", response_model=AgentResponse)
-def update_agent(agent_id: str, payload: AgentUpdate, db: Session = Depends(get_db)):
+def update_agent(agent_id: int, payload: AgentUpdate, db: Session = Depends(get_db)):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -55,13 +58,17 @@ def update_agent(agent_id: str, payload: AgentUpdate, db: Session = Depends(get_
         else:
             setattr(agent, key, value)
     
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Invalid agent update: {exc.orig}") from exc
     db.refresh(agent)
     return agent
 
 
 @router.delete("/{agent_id}")
-def delete_agent(agent_id: str, db: Session = Depends(get_db)):
+def delete_agent(agent_id: int, db: Session = Depends(get_db)):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -71,13 +78,12 @@ def delete_agent(agent_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{agent_id}/duplicate", response_model=AgentResponse)
-def duplicate_agent(agent_id: str, db: Session = Depends(get_db)):
+def duplicate_agent(agent_id: int, db: Session = Depends(get_db)):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     new_agent = Agent(
-        id=uuid.uuid4(),
         name=f"{agent.name} (copy)",
         description=agent.description,
         status=AgentStatus.draft,
@@ -93,7 +99,6 @@ def duplicate_agent(agent_id: str, db: Session = Depends(get_db)):
 
     for node in agent.nodes:
         new_node = Node(
-            id=uuid.uuid4(),
             agent_id=new_agent.id,
             name=node.name,
             type=node.type,
@@ -105,7 +110,6 @@ def duplicate_agent(agent_id: str, db: Session = Depends(get_db)):
 
     for edge in agent.edges:
         new_edge = Edge(
-            id=uuid.uuid4(),
             agent_id=new_agent.id,
             source_node_id=edge.source_node_id,
             target_node_id=edge.target_node_id,
@@ -115,13 +119,17 @@ def duplicate_agent(agent_id: str, db: Session = Depends(get_db)):
         )
         db.add(new_edge)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Failed to duplicate agent: {exc.orig}") from exc
     db.refresh(new_agent)
     return new_agent
 
 
 @router.get("/{agent_id}/export")
-def export_agent(agent_id: str, db: Session = Depends(get_db)):
+def export_agent(agent_id: int, db: Session = Depends(get_db)):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -151,20 +159,23 @@ def export_agent(agent_id: str, db: Session = Depends(get_db)):
 
 @router.post("/import", response_model=AgentResponse)
 def import_agent(data: dict, db: Session = Depends(get_db)):
-    from models.models import NodeType, EdgeType
     agent_data = data.get("agent", {})
-    new_agent = Agent(id=uuid.uuid4(), **agent_data)
+    new_agent = Agent(**agent_data)
     db.add(new_agent)
     db.flush()
 
     for n in data.get("nodes", []):
-        node = Node(id=uuid.uuid4(), agent_id=new_agent.id, **n)
+        node = Node(agent_id=new_agent.id, **n)
         db.add(node)
 
     for e in data.get("edges", []):
-        edge = Edge(id=uuid.uuid4(), agent_id=new_agent.id, **e)
+        edge = Edge(agent_id=new_agent.id, **e)
         db.add(edge)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Invalid import payload: {exc.orig}") from exc
     db.refresh(new_agent)
     return new_agent
