@@ -1,0 +1,402 @@
+{
+  "agent": {
+    "name": "All Cases Import Example",
+    "description": "Comprehensive import example covering LLM + functional node types and direct + conditional edges (state_key_equals, python_expression, llm_router).",
+    "input_schema": {
+      "payload": {
+        "type": "object",
+        "description": "Primary business payload"
+      },
+      "messages": {
+        "type": "array",
+        "description": "Conversation messages"
+      },
+      "decision_input": {
+        "type": "string",
+        "description": "Optional explicit decision signal"
+      },
+      "score": {
+        "type": "number",
+        "description": "Optional score for python expression routing"
+      },
+      "topic": {
+        "type": "string",
+        "description": "Optional topic to drive llm_router branch"
+      }
+    },
+    "output_schema": {
+      "final_summary": {
+        "type": "string"
+      },
+      "decision": {
+        "type": "string"
+      },
+      "department": {
+        "type": "string"
+      },
+      "route": {
+        "type": "string"
+      },
+      "api_result": {
+        "type": "object"
+      }
+    },
+    "state_schema": {
+      "workflow": {
+        "type": "string",
+        "default": "all-cases-example"
+      },
+      "decision": {
+        "type": "string",
+        "default": "approved"
+      },
+      "score": {
+        "type": "number",
+        "default": 75
+      },
+      "department": {
+        "type": "string",
+        "default": "support"
+      }
+    },
+    "entry_node": "start_ingest",
+    "exit_node": "final_output"
+  },
+  "nodes": [
+    {
+      "name": "start_ingest",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    out.setdefault('messages', [])\n    out.setdefault('payload', {})\n    out['started'] = True\n    return out"
+        }
+      },
+      "position_x": 80,
+      "position_y": 230,
+      "id": 1001
+    },
+    {
+      "name": "transform_payload",
+      "type": "functional",
+      "config": {
+        "function_type": "data_transform",
+        "data_transform": {
+          "operations": [
+            {
+              "type": "extract",
+              "config": {
+                "key": "payload",
+                "new_key": "normalized_payload"
+              }
+            },
+            {
+              "type": "merge",
+              "config": {
+                "data": {
+                  "workflow": "all-cases-example",
+                  "source": "import_file"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "position_x": 320,
+      "position_y": 230,
+      "id": 1002
+    },
+    {
+      "name": "llm_enrichment",
+      "type": "llm_call",
+      "config": {
+        "provider": "ollama",
+        "model": "llama3.1",
+        "system_prompt": "Return concise output.",
+        "user_prompt_template": "Summarize payload: {{normalized_payload}}",
+        "temperature": 0.2,
+        "max_tokens": 120,
+        "output_key": "llm_response",
+        "parse_json_response": false
+      },
+      "position_x": 560,
+      "position_y": 230,
+      "id": 1003
+    },
+    {
+      "name": "state_key_router_source",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    signal = str(out.get('decision_input') or out.get('payload', {}).get('decision') or '').lower().strip()\n    if signal in ('approve', 'approved', 'yes'):\n        out['decision'] = 'approved'\n    elif signal in ('reject', 'rejected', 'no'):\n        out['decision'] = 'rejected'\n    else:\n        out['decision'] = 'approved'\n    return out"
+        }
+      },
+      "position_x": 810,
+      "position_y": 230,
+      "id": 1004
+    },
+    {
+      "name": "approved_path",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    out['path'] = 'approved_path'\n    return out"
+        }
+      },
+      "position_x": 1060,
+      "position_y": 140,
+      "id": 1005
+    },
+    {
+      "name": "rejected_path",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    out['path'] = 'rejected_path'\n    return out"
+        }
+      },
+      "position_x": 1060,
+      "position_y": 320,
+      "id": 1006
+    },
+    {
+      "name": "python_expr_router_source",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    out['score'] = int(out.get('score', 75))\n    return out"
+        }
+      },
+      "position_x": 1310,
+      "position_y": 140,
+      "id": 1007
+    },
+    {
+      "name": "manual_review",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    out['review_status'] = 'manual_review_required'\n    return out"
+        }
+      },
+      "position_x": 1310,
+      "position_y": 320,
+      "id": 1008
+    },
+    {
+      "name": "llm_router_source",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    topic = str(out.get('topic') or out.get('payload', {}).get('topic') or '').lower()\n    out['department'] = 'sales' if 'sales' in topic else 'support'\n    return out"
+        }
+      },
+      "position_x": 1560,
+      "position_y": 140,
+      "id": 1009
+    },
+    {
+      "name": "sales_path",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    out['route'] = 'sales'\n    return out"
+        }
+      },
+      "position_x": 1810,
+      "position_y": 80,
+      "id": 1010
+    },
+    {
+      "name": "support_path",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    out['route'] = 'support'\n    return out"
+        }
+      },
+      "position_x": 1810,
+      "position_y": 200,
+      "id": 1011
+    },
+    {
+      "name": "api_lookup",
+      "type": "functional",
+      "config": {
+        "function_type": "api_call",
+        "api_call": {
+          "url": "https://httpbin.org/anything",
+          "method": "POST",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"route\": \"{{route}}\", \"department\": \"{{department}}\", \"workflow\": \"{{workflow}}\"}",
+          "output_key": "api_result"
+        }
+      },
+      "position_x": 2060,
+      "position_y": 140,
+      "id": 1012
+    },
+    {
+      "name": "final_output",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    out['final_summary'] = f\"decision={out.get('decision')} | department={out.get('department')} | route={out.get('route')}\"\n    return out"
+        }
+      },
+      "position_x": 2300,
+      "position_y": 230,
+      "id": 1013
+    }
+  ],
+  "edges": [
+    {
+      "source_node_id": 1001,
+      "target_node_id": 1002,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 1002,
+      "target_node_id": 1003,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 1003,
+      "target_node_id": 1004,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 1004,
+      "target_node_id": 1005,
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "decision",
+          "value": "approved"
+        }
+      },
+      "label": "approved"
+    },
+    {
+      "source_node_id": 1004,
+      "target_node_id": 1006,
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "decision",
+          "value": "approved"
+        }
+      },
+      "label": "rejected"
+    },
+    {
+      "source_node_id": 1005,
+      "target_node_id": 1007,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 1006,
+      "target_node_id": 1008,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 1007,
+      "target_node_id": 1009,
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "python_expression",
+        "python_expression": {
+          "expression": "state.get('score', 0) >= 70"
+        }
+      },
+      "label": "score_gte_70"
+    },
+    {
+      "source_node_id": 1007,
+      "target_node_id": 1008,
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "python_expression",
+        "python_expression": {
+          "expression": "state.get('score', 0) >= 70"
+        }
+      },
+      "label": "score_lt_70"
+    },
+    {
+      "source_node_id": 1009,
+      "target_node_id": 1010,
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "llm_router",
+        "llm_router": {
+          "routing_key": "department"
+        }
+      },
+      "label": "sales"
+    },
+    {
+      "source_node_id": 1009,
+      "target_node_id": 1011,
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "llm_router",
+        "llm_router": {
+          "routing_key": "department"
+        }
+      },
+      "label": "support"
+    },
+    {
+      "source_node_id": 1010,
+      "target_node_id": 1012,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 1011,
+      "target_node_id": 1012,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 1012,
+      "target_node_id": 1013,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 1008,
+      "target_node_id": 1013,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    }
+  ]
+}

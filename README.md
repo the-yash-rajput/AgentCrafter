@@ -53,6 +53,20 @@ docker-compose up --build
 # API Docs → http://localhost:8000/docs
 ```
 
+### Database Migrations (Required)
+
+Schema changes are managed with Alembic.
+
+```bash
+cd backend
+
+# Apply latest migrations
+alembic upgrade head
+
+# (Optional) create a new migration
+alembic revision -m "describe change"
+```
+
 ### Local Development
 
 **Backend:**
@@ -114,6 +128,10 @@ Key endpoints:
 | POST | `/api/agents/import` | Import from JSON |
 | GET | `/api/runs/{id}` | Get run result |
 | GET | `/api/runs/{id}/stream` | SSE stream |
+
+Note:
+- Edges now reference node IDs (`source_node_id`, `target_node_id`) with database foreign keys.
+- For imports, you can provide node `id` values in `nodes[]` and use those IDs in `edges[]`.
 
 ## How It Works
 

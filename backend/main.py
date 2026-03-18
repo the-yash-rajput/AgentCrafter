@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from db.session import create_tables
+from db.session import run_migrations
 from api import agents, nodes, edges, runs
 
 app = FastAPI(
@@ -20,7 +20,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup():
-    create_tables()
+    run_migrations()
 
 
 app.include_router(agents.router, prefix="/api")

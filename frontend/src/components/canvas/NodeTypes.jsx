@@ -5,8 +5,8 @@ import { useGraphStore } from '../../hooks/useGraphStore'
 const NodeBase = ({ id, data, type, icon: Icon, color, glowClass, headerLabel }) => {
   const { selectNode, selectedNode, agent } = useGraphStore()
   const isSelected = selectedNode?.id === id
-  const isEntry = agent?.entry_node === id
-  const isExit = agent?.exit_node === id
+  const isEntry = agent?.entry_node === data?.name
+  const isExit = agent?.exit_node === data?.name
 
   return (
     <div

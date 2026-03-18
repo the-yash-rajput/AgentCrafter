@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Any, List
 from datetime import datetime
-from models.models import AgentStatus, NodeType, EdgeType, RunStatus
+from models import AgentStatus, NodeType, EdgeType, RunStatus
 
 
 # ─── Agent Schemas ───────────────────────────────────────────────────────────
@@ -93,14 +93,16 @@ class NodeResponse(BaseModel):
 # ─── Edge Schemas ─────────────────────────────────────────────────────────────
 
 class EdgeCreate(BaseModel):
-    source_node_id: str
-    target_node_id: str
+    source_node_id: int
+    target_node_id: int
     edge_type: EdgeType = EdgeType.direct
     condition_config: dict = Field(default_factory=dict)
     label: Optional[str] = None
 
 
 class EdgeUpdate(BaseModel):
+    source_node_id: Optional[int] = None
+    target_node_id: Optional[int] = None
     edge_type: Optional[EdgeType] = None
     condition_config: Optional[dict] = None
     label: Optional[str] = None
@@ -109,8 +111,8 @@ class EdgeUpdate(BaseModel):
 class EdgeResponse(BaseModel):
     id: int
     agent_id: int
-    source_node_id: str
-    target_node_id: str
+    source_node_id: int
+    target_node_id: int
     edge_type: EdgeType
     condition_config: dict
     label: Optional[str]

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from db.session import get_db
-from models.models import Node, Agent
+from models import Node, Agent
 from schemas.schemas import NodeCreate, NodeUpdate, NodeResponse
 
 router = APIRouter(tags=["nodes"])

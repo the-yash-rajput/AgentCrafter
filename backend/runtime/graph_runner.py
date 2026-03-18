@@ -1,10 +1,10 @@
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 from datetime import datetime
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 from langgraph.graph import StateGraph, END
 
-from models.models import Agent, Node, Edge, Run, RunStatus, NodeType, EdgeType
+from models import Agent, Node, Edge, Run, RunStatus, NodeType, EdgeType
 from runtime.node_builders import build_functional_node, build_llm_node, build_condition_router
 from runtime.langfuse_tracing import (
     start_run_trace,
@@ -25,8 +25,18 @@ class GraphRunner:
         if not agent:
             raise ValueError(f"Agent {agent_id} not found")
 
-        nodes = self.db.query(Node).filter(Node.agent_id == agent_id).all()
-        edges = self.db.query(Edge).filter(Edge.agent_id == agent_id).all()
+        nodes = (
+            self.db.query(Node)
+            .options(load_only(Node.id, Node.name, Node.type, Node.config))
+            .filter(Node.agent_id == agent_id)
+            .all()
+        )
+        edges = (
+            self.db.query(Edge)
+            .options(load_only(Edge.source_node_id, Edge.target_node_id, Edge.edge_type, Edge.condition_config, Edge.label))
+            .filter(Edge.agent_id == agent_id)
+            .all()
+        )
 
         if not nodes:
             raise ValueError("Agent has no nodes configured")
@@ -94,6 +104,7 @@ class GraphRunner:
         workflow = StateGraph(dict)
 
         node_map: Dict[str, Node] = {}
+        node_id_to_name: Dict[int, str] = {}
         for node in nodes:
             if node.type == NodeType.functional:
                 fn = build_functional_node(node.config or {})
@@ -104,6 +115,7 @@ class GraphRunner:
 
             workflow.add_node(node.name, self._wrap_node(node, fn, snapshots))
             node_map[node.name] = node
+            node_id_to_name[node.id] = node.name
 
         if not node_map:
             raise ValueError("Agent has no executable nodes configured")
@@ -111,21 +123,23 @@ class GraphRunner:
         entry_node = agent.entry_node if agent.entry_node in node_map else next(iter(node_map))
         workflow.set_entry_point(entry_node)
 
-        edges_by_source: Dict[str, List[Edge]] = defaultdict(list)
+        edges_by_source: Dict[str, List[tuple[str, Edge]]] = defaultdict(list)
         for edge in edges:
-            if edge.source_node_id in node_map and edge.target_node_id in node_map:
-                edges_by_source[edge.source_node_id].append(edge)
+            source_name = node_id_to_name.get(edge.source_node_id)
+            target_name = node_id_to_name.get(edge.target_node_id)
+            if source_name and target_name:
+                edges_by_source[source_name].append((target_name, edge))
 
         for source, source_edges in edges_by_source.items():
-            conditional_edges = [e for e in source_edges if e.edge_type == EdgeType.conditional]
-            direct_edges = [e for e in source_edges if e.edge_type == EdgeType.direct]
+            conditional_edges = [(target, e) for target, e in source_edges if e.edge_type == EdgeType.conditional]
+            direct_edges = [(target, e) for target, e in source_edges if e.edge_type == EdgeType.direct]
 
             if conditional_edges:
                 edge_list = [
-                    {"target": e.target_node_id, "label": e.label or e.target_node_id}
-                    for e in conditional_edges
+                    {"target": target_name, "label": e.label or target_name}
+                    for target_name, e in conditional_edges
                 ]
-                router = build_condition_router(conditional_edges[0].condition_config or {}, edge_list)
+                router = build_condition_router(conditional_edges[0][1].condition_config or {}, edge_list)
 
                 def route(state: dict, _router=router):
                     next_node = _router(state)
@@ -134,8 +148,8 @@ class GraphRunner:
                 workflow.add_conditional_edges(source, route)
                 continue
 
-            for edge in direct_edges:
-                workflow.add_edge(source, edge.target_node_id)
+            for target_name, _edge in direct_edges:
+                workflow.add_edge(source, target_name)
 
         valid_exit = agent.exit_node if agent.exit_node in node_map else None
         if valid_exit:
@@ -182,12 +196,23 @@ class GraphRunner:
         if not agent:
             return {"valid": False, "errors": ["Agent not found"]}
 
-        nodes = self.db.query(Node).filter(Node.agent_id == agent_id).all()
-        edges = self.db.query(Edge).filter(Edge.agent_id == agent_id).all()
+        nodes = (
+            self.db.query(Node)
+            .options(load_only(Node.id, Node.name))
+            .filter(Node.agent_id == agent_id)
+            .all()
+        )
+        edges = (
+            self.db.query(Edge)
+            .options(load_only(Edge.source_node_id, Edge.target_node_id))
+            .filter(Edge.agent_id == agent_id)
+            .all()
+        )
 
         errors = []
         warnings = []
         node_names = {n.name for n in nodes}
+        node_ids = {n.id for n in nodes}
 
         if not nodes:
             errors.append("Agent has no nodes")
@@ -199,10 +224,10 @@ class GraphRunner:
             errors.append(f"Exit node '{agent.exit_node}' does not exist")
 
         for edge in edges:
-            if edge.source_node_id not in node_names:
-                errors.append(f"Edge source '{edge.source_node_id}' does not exist")
-            if edge.target_node_id not in node_names:
-                errors.append(f"Edge target '{edge.target_node_id}' does not exist")
+            if edge.source_node_id not in node_ids:
+                errors.append(f"Edge source node ID '{edge.source_node_id}' does not exist")
+            if edge.target_node_id not in node_ids:
+                errors.append(f"Edge target node ID '{edge.target_node_id}' does not exist")
 
         if not agent.entry_node:
             warnings.append("No entry node set — will execute nodes in creation order")

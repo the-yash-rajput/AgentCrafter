@@ -13,7 +13,7 @@ export const useGraphStore = create((set, get) => ({
 
   loadGraph: (agent) => {
     const rfNodes = (agent.nodes || []).map(n => ({
-      id: n.name,
+      id: String(n.id),
       type: n.type === 'llm_call' ? 'llmNode' : 'functionalNode',
       position: { x: n.position_x || 0, y: n.position_y || 0 },
       data: { ...n, label: n.name },
@@ -21,8 +21,8 @@ export const useGraphStore = create((set, get) => ({
 
     const rfEdges = (agent.edges || []).map(e => ({
       id: String(e.id),
-      source: e.source_node_id,
-      target: e.target_node_id,
+      source: String(e.source_node_id),
+      target: String(e.target_node_id),
       type: e.edge_type === 'conditional' ? 'conditionalEdge' : 'default',
       label: e.label || '',
       animated: e.edge_type === 'conditional',

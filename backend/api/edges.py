@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from db.session import get_db
-from models.models import Edge, Agent, Node
+from models import Edge, Agent, Node
 from schemas.schemas import EdgeCreate, EdgeUpdate, EdgeResponse
 
 router = APIRouter(tags=["edges"])
@@ -14,10 +14,10 @@ def add_edge(agent_id: int, payload: EdgeCreate, db: Session = Depends(get_db)):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    source_node = db.query(Node).filter(Node.agent_id == agent_id, Node.name == payload.source_node_id).first()
-    target_node = db.query(Node).filter(Node.agent_id == agent_id, Node.name == payload.target_node_id).first()
+    source_node = db.query(Node).filter(Node.agent_id == agent_id, Node.id == payload.source_node_id).first()
+    target_node = db.query(Node).filter(Node.agent_id == agent_id, Node.id == payload.target_node_id).first()
     if not source_node or not target_node:
-        raise HTTPException(status_code=400, detail="source_node_id and target_node_id must reference existing agent nodes")
+        raise HTTPException(status_code=400, detail="source_node_id and target_node_id must reference existing node IDs in this agent")
 
     edge = Edge(
         agent_id=agent_id,
@@ -44,6 +44,15 @@ def update_edge(edge_id: int, payload: EdgeUpdate, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="Edge not found")
 
     update_data = payload.model_dump(exclude_unset=True)
+    if "source_node_id" in update_data:
+        source = db.query(Node).filter(Node.agent_id == edge.agent_id, Node.id == update_data["source_node_id"]).first()
+        if not source:
+            raise HTTPException(status_code=400, detail="Invalid source_node_id for this agent")
+    if "target_node_id" in update_data:
+        target = db.query(Node).filter(Node.agent_id == edge.agent_id, Node.id == update_data["target_node_id"]).first()
+        if not target:
+            raise HTTPException(status_code=400, detail="Invalid target_node_id for this agent")
+
     for key, value in update_data.items():
         setattr(edge, key, value)
 

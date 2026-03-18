@@ -267,11 +267,13 @@ const FunctionalNodeConfig = ({ config, onChange }) => {
 // ─── Edge Config Panel ─────────────────────────────────────────────────────────
 
 const EdgeConfigPanel = ({ edge, onClose }) => {
-  const { agent, edges, selectEdge } = useGraphStore()
+  const { nodes } = useGraphStore()
   const [config, setConfig] = useState(edge.data?.condition_config || {})
   const [label, setLabel] = useState(edge.data?.label || '')
   const [edgeType, setEdgeType] = useState(edge.data?.edge_type || 'direct')
   const [saving, setSaving] = useState(false)
+  const sourceName = nodes.find(n => n.id === String(edge.source))?.data?.name || edge.source
+  const targetName = nodes.find(n => n.id === String(edge.target))?.data?.name || edge.target
 
   const handleSave = async () => {
     setSaving(true)
@@ -290,7 +292,7 @@ const EdgeConfigPanel = ({ edge, onClose }) => {
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
         <div>
           <p className="text-xs font-mono uppercase tracking-widest" style={{ color: '#f59e0b' }}>Edge Config</p>
-          <p className="text-sm font-semibold text-white mt-0.5">{edge.source} → {edge.target}</p>
+          <p className="text-sm font-semibold text-white mt-0.5">{sourceName} → {targetName}</p>
         </div>
         <button onClick={onClose}><X size={16} style={{ color: 'var(--text-muted)' }} /></button>
       </div>
@@ -435,6 +437,7 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
 
   const isLLM = selectedNode.type === 'llmNode'
   const nodeId = selectedNode.id
+  const nodeName = selectedNode.data?.name || selectedNode.id
 
   const handleSave = async () => {
     setSaving(true)
@@ -465,18 +468,18 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
   const handleSetEntry = async () => {
     try {
       const { updateAgent } = await import('../../api/client')
-      await updateAgent(agent.id, { entry_node: nodeId })
-      useGraphStore.setState(s => ({ agent: { ...s.agent, entry_node: nodeId } }))
-      toast.success(`${nodeId} set as entry node`)
+      await updateAgent(agent.id, { entry_node: nodeName })
+      useGraphStore.setState(s => ({ agent: { ...s.agent, entry_node: nodeName } }))
+      toast.success(`${nodeName} set as entry node`)
     } catch (e) { toast.error('Failed') }
   }
 
   const handleSetExit = async () => {
     try {
       const { updateAgent } = await import('../../api/client')
-      await updateAgent(agent.id, { exit_node: nodeId })
-      useGraphStore.setState(s => ({ agent: { ...s.agent, exit_node: nodeId } }))
-      toast.success(`${nodeId} set as exit node`)
+      await updateAgent(agent.id, { exit_node: nodeName })
+      useGraphStore.setState(s => ({ agent: { ...s.agent, exit_node: nodeName } }))
+      toast.success(`${nodeName} set as exit node`)
     } catch (e) { toast.error('Failed') }
   }
 
@@ -519,10 +522,10 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
           onClick={handleSetEntry}
           className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:opacity-80"
           style={{
-            background: agent?.entry_node === nodeId ? '#10b98133' : 'var(--surface2)',
-            color: agent?.entry_node === nodeId ? '#10b981' : 'var(--text-muted)',
+            background: agent?.entry_node === nodeName ? '#10b98133' : 'var(--surface2)',
+            color: agent?.entry_node === nodeName ? '#10b981' : 'var(--text-muted)',
             border: '1px solid',
-            borderColor: agent?.entry_node === nodeId ? '#10b981' : 'var(--border2)',
+            borderColor: agent?.entry_node === nodeName ? '#10b981' : 'var(--border2)',
           }}
         >
           <Flag size={10} /> Entry
@@ -531,10 +534,10 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
           onClick={handleSetExit}
           className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:opacity-80"
           style={{
-            background: agent?.exit_node === nodeId ? '#f59e0b33' : 'var(--surface2)',
-            color: agent?.exit_node === nodeId ? '#f59e0b' : 'var(--text-muted)',
+            background: agent?.exit_node === nodeName ? '#f59e0b33' : 'var(--surface2)',
+            color: agent?.exit_node === nodeName ? '#f59e0b' : 'var(--text-muted)',
             border: '1px solid',
-            borderColor: agent?.exit_node === nodeId ? '#f59e0b' : 'var(--border2)',
+            borderColor: agent?.exit_node === nodeName ? '#f59e0b' : 'var(--border2)',
           }}
         >
           <LogOut size={10} /> Exit

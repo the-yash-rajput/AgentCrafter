@@ -96,7 +96,7 @@ const GraphEditorInner = () => {
       })
 
       addNode({
-        id: nodeName,
+        id: String(created.id),
         type: isLLM ? 'llmNode' : 'functionalNode',
         position,
         data: { ...created, label: nodeName },
@@ -115,8 +115,8 @@ const GraphEditorInner = () => {
   const onConnect = useCallback(async (params) => {
     try {
       const created = await createEdge(agentId, {
-        source_node_id: params.source,
-        target_node_id: params.target,
+        source_node_id: Number(params.source),
+        target_node_id: Number(params.target),
         edge_type: 'direct',
       })
 

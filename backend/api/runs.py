@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 import json
 
 from db.session import get_db
-from models.models import Run, Agent
+from models import Run, Agent
 from schemas.schemas import RunCreate, RunResponse
 from runtime.graph_runner import GraphRunner
 
@@ -49,8 +49,17 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/agents/{agent_id}/runs", response_model=List[RunResponse])
-def list_runs(agent_id: int, db: Session = Depends(get_db)):
-    return db.query(Run).filter(Run.agent_id == agent_id).order_by(Run.started_at.desc()).all()
+def list_runs(agent_id: int, limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    return (
+        db.query(Run)
+        .filter(Run.agent_id == agent_id)
+        .order_by(Run.started_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
 
 @router.get("/runs/{run_id}/stream")

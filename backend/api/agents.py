@@ -1,10 +1,11 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 
 from db.session import get_db
-from models.models import Agent, Node, Edge, AgentStatus
+from models import Agent, Node, Edge, AgentStatus
 from schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, AgentWithGraph
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -33,13 +34,20 @@ def create_agent(payload: AgentCreate, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=List[AgentResponse])
-def list_agents(db: Session = Depends(get_db)):
-    return db.query(Agent).order_by(Agent.created_at.desc()).all()
+def list_agents(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    return db.query(Agent).order_by(Agent.created_at.desc()).offset(offset).limit(limit).all()
 
 
 @router.get("/{agent_id}", response_model=AgentWithGraph)
 def get_agent(agent_id: int, db: Session = Depends(get_db)):
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    agent = (
+        db.query(Agent)
+        .options(selectinload(Agent.nodes), selectinload(Agent.edges))
+        .filter(Agent.id == agent_id)
+        .first()
+    )
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     return agent
@@ -96,6 +104,7 @@ def duplicate_agent(agent_id: int, db: Session = Depends(get_db)):
     )
     db.add(new_agent)
     db.flush()
+    node_id_pairs: list[tuple[int, Node]] = []
 
     for node in agent.nodes:
         new_node = Node(
@@ -107,12 +116,19 @@ def duplicate_agent(agent_id: int, db: Session = Depends(get_db)):
             position_y=node.position_y,
         )
         db.add(new_node)
+        node_id_pairs.append((node.id, new_node))
+    db.flush()
+    node_id_map = {old_id: new_node.id for old_id, new_node in node_id_pairs}
 
     for edge in agent.edges:
+        mapped_source = node_id_map.get(edge.source_node_id)
+        mapped_target = node_id_map.get(edge.target_node_id)
+        if mapped_source is None or mapped_target is None:
+            raise HTTPException(status_code=400, detail="Failed to map edge endpoints while duplicating")
         new_edge = Edge(
             agent_id=new_agent.id,
-            source_node_id=edge.source_node_id,
-            target_node_id=edge.target_node_id,
+            source_node_id=mapped_source,
+            target_node_id=mapped_target,
             edge_type=edge.edge_type,
             condition_config=edge.condition_config,
             label=edge.label,
@@ -145,7 +161,7 @@ def export_agent(agent_id: int, db: Session = Depends(get_db)):
             "exit_node": agent.exit_node,
         },
         "nodes": [
-            {"name": n.name, "type": n.type.value, "config": n.config,
+            {"id": n.id, "name": n.name, "type": n.type.value, "config": n.config,
              "position_x": n.position_x, "position_y": n.position_y}
             for n in agent.nodes
         ],
@@ -164,14 +180,50 @@ def import_agent(data: dict, db: Session = Depends(get_db)):
     db.add(new_agent)
     db.flush()
 
+    node_id_map: dict[int, int] = {}
+    node_name_map: dict[str, int] = {}
+    node_pairs_by_old_id: list[tuple[int, Node]] = []
+    created_nodes: list[Node] = []
     for n in data.get("nodes", []):
-        node = Node(agent_id=new_agent.id, **n)
+        raw = dict(n)
+        import_node_id = raw.pop("id", None)
+        node = Node(agent_id=new_agent.id, **raw)
         db.add(node)
+        created_nodes.append(node)
+        if import_node_id is not None:
+            try:
+                node_pairs_by_old_id.append((int(import_node_id), node))
+            except (TypeError, ValueError):
+                pass
     # Ensure node rows exist before edge FK checks.
     db.flush()
+    for old_id, node in node_pairs_by_old_id:
+        node_id_map[old_id] = node.id
+    for node in created_nodes:
+        node_name_map[node.name] = node.id
 
     for e in data.get("edges", []):
-        edge = Edge(agent_id=new_agent.id, **e)
+        edge_data = dict(e)
+        edge_data.pop("id", None)
+        source_ref = edge_data.get("source_node_id")
+        target_ref = edge_data.get("target_node_id")
+
+        mapped_source = node_id_map.get(source_ref) if isinstance(source_ref, int) else None
+        mapped_target = node_id_map.get(target_ref) if isinstance(target_ref, int) else None
+        if mapped_source is None and isinstance(source_ref, str):
+            mapped_source = node_name_map.get(source_ref)
+        if mapped_target is None and isinstance(target_ref, str):
+            mapped_target = node_name_map.get(target_ref)
+
+        if mapped_source is None or mapped_target is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid import payload: unable to resolve edge endpoints source={source_ref} target={target_ref}",
+            )
+
+        edge_data["source_node_id"] = mapped_source
+        edge_data["target_node_id"] = mapped_target
+        edge = Edge(agent_id=new_agent.id, **edge_data)
         db.add(edge)
 
     try:
