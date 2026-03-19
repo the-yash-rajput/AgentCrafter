@@ -267,7 +267,7 @@ const FunctionalNodeConfig = ({ config, onChange }) => {
 // ─── Edge Config Panel ─────────────────────────────────────────────────────────
 
 const EdgeConfigPanel = ({ edge, onClose }) => {
-  const { nodes } = useGraphStore()
+  const { nodes, updateEdgeData } = useGraphStore()
   const [config, setConfig] = useState(edge.data?.condition_config || {})
   const [label, setLabel] = useState(edge.data?.label || '')
   const [edgeType, setEdgeType] = useState(edge.data?.edge_type || 'direct')
@@ -275,11 +275,18 @@ const EdgeConfigPanel = ({ edge, onClose }) => {
   const sourceName = nodes.find(n => n.id === String(edge.source))?.data?.name || edge.source
   const targetName = nodes.find(n => n.id === String(edge.target))?.data?.name || edge.target
 
+  useEffect(() => {
+    setConfig(edge.data?.condition_config || {})
+    setLabel(edge.data?.label || '')
+    setEdgeType(edge.data?.edge_type || 'direct')
+  }, [edge.id, edge.data])
+
   const handleSave = async () => {
     setSaving(true)
     try {
       const { updateEdge } = await import('../../api/client')
       await updateEdge(edge.id, { edge_type: edgeType, condition_config: config, label })
+      updateEdgeData(edge.id, { edge_type: edgeType, condition_config: config, label })
       toast.success('Edge updated')
     } catch (e) {
       toast.error('Failed to update edge')

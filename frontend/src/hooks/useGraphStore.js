@@ -84,6 +84,29 @@ export const useGraphStore = create((set, get) => ({
     }))
   },
 
+  updateEdgeData: (edgeId, data) => {
+    set(state => {
+      const edges = state.edges.map(edge => (
+        edge.id === edgeId
+          ? {
+              ...edge,
+              ...data,
+              data: { ...edge.data, ...data },
+            }
+          : edge
+      ))
+      const selectedEdge = state.selectedEdge
+        ? edges.find(edge => edge.id === state.selectedEdge.id) || state.selectedEdge
+        : null
+
+      return {
+        edges,
+        selectedEdge,
+        isDirty: true,
+      }
+    })
+  },
+
   setNodePositions: (positions) => {
     set(state => {
       const positionMap = new Map(positions.map(({ id, position }) => [String(id), position]))
