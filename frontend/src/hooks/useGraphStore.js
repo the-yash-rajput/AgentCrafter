@@ -8,6 +8,7 @@ export const useGraphStore = create((set, get) => ({
   selectedNode: null,
   selectedEdge: null,
   isDirty: false,
+  layoutUndoSnapshot: null,
 
   setAgent: (agent) => set({ agent }),
 
@@ -29,7 +30,15 @@ export const useGraphStore = create((set, get) => ({
       data: { ...e },
     }))
 
-    set({ agent, nodes: rfNodes, edges: rfEdges, isDirty: false })
+    set({
+      agent,
+      nodes: rfNodes,
+      edges: rfEdges,
+      isDirty: false,
+      layoutUndoSnapshot: null,
+      selectedNode: null,
+      selectedEdge: null,
+    })
   },
 
   onNodesChange: (changes) => {
@@ -75,6 +84,25 @@ export const useGraphStore = create((set, get) => ({
     }))
   },
 
+  setNodePositions: (positions) => {
+    set(state => {
+      const positionMap = new Map(positions.map(({ id, position }) => [String(id), position]))
+      const nodes = state.nodes.map((node) => {
+        const nextPosition = positionMap.get(node.id)
+        return nextPosition ? { ...node, position: nextPosition } : node
+      })
+      const selectedNode = state.selectedNode
+        ? nodes.find(node => node.id === state.selectedNode.id) || state.selectedNode
+        : null
+
+      return {
+        nodes,
+        selectedNode,
+        isDirty: true,
+      }
+    })
+  },
+
   removeEdge: (edgeId) => {
     set(state => ({
       edges: state.edges.filter(e => e.id !== edgeId),
@@ -85,5 +113,7 @@ export const useGraphStore = create((set, get) => ({
   selectNode: (node) => set({ selectedNode: node, selectedEdge: null }),
   selectEdge: (edge) => set({ selectedEdge: edge, selectedNode: null }),
   clearSelection: () => set({ selectedNode: null, selectedEdge: null }),
+  setLayoutUndoSnapshot: (snapshot) => set({ layoutUndoSnapshot: snapshot }),
+  clearLayoutUndoSnapshot: () => set({ layoutUndoSnapshot: null }),
   markClean: () => set({ isDirty: false }),
 }))

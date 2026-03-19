@@ -18,18 +18,204 @@ import { RunModal } from '../panels/RunModal'
 import { TopBar } from './TopBar'
 
 let nodeCounter = 1
+const DEFAULT_NODE_WIDTH = 220
+const DEFAULT_NODE_HEIGHT = 110
+const LAYOUT_COLUMN_GAP = 72
+const LAYOUT_ROW_GAP = 110
+const COMPONENT_GAP = 180
+
+const getNodeSize = (node) => ({
+  width: node.width || node.measured?.width || DEFAULT_NODE_WIDTH,
+  height: node.height || node.measured?.height || DEFAULT_NODE_HEIGHT,
+})
+
+const buildComponentLayout = ({ startIds, nodeMap, forwardAdjacency, incomingAdjacency, allowedIds, startY = 0 }) => {
+  const allowed = new Set(allowedIds)
+  const queue = [...startIds]
+  const visited = new Set()
+  const levels = new Map()
+  const levelNodes = new Map()
+
+  queue.forEach((id, index) => {
+    if (!allowed.has(id)) return
+    visited.add(id)
+    levels.set(id, 0)
+    levelNodes.set(0, [...(levelNodes.get(0) || []), id])
+    queue[index] = id
+  })
+
+  let cursor = 0
+  while (cursor < queue.length) {
+    const nodeId = queue[cursor++]
+    const level = levels.get(nodeId) || 0
+    const nextIds = [...(forwardAdjacency.get(nodeId) || [])].sort((a, b) => {
+      const aNode = nodeMap.get(a)
+      const bNode = nodeMap.get(b)
+      return (aNode?.position?.x || 0) - (bNode?.position?.x || 0)
+    })
+
+    nextIds.forEach((targetId) => {
+      if (!allowed.has(targetId)) return
+      const nextLevel = level + 1
+      const currentLevel = levels.get(targetId)
+      if (currentLevel == null || nextLevel < currentLevel) {
+        levels.set(targetId, nextLevel)
+      }
+      if (visited.has(targetId)) return
+      visited.add(targetId)
+      queue.push(targetId)
+    })
+  }
+
+  allowed.forEach((nodeId) => {
+    if (levels.has(nodeId)) return
+    const fallbackLevel = incomingAdjacency.get(nodeId)?.size ? 1 : 0
+    levels.set(nodeId, fallbackLevel)
+  })
+
+  levels.forEach((level, nodeId) => {
+    levelNodes.set(level, [...(levelNodes.get(level) || []), nodeId])
+  })
+
+  const orderedLevels = [...levelNodes.keys()].sort((a, b) => a - b)
+  const positions = []
+  let maxBottom = startY
+
+  orderedLevels.forEach((level) => {
+    const ids = [...new Set(levelNodes.get(level) || [])]
+    const orderedIds = ids.sort((a, b) => {
+      const parentIndex = (nodeId) => {
+        const parents = [...(incomingAdjacency.get(nodeId) || [])].filter(parentId => levels.get(parentId) === level - 1)
+        if (!parents.length) return nodeMap.get(nodeId)?.position?.x || 0
+        const average = parents.reduce((sum, parentId) => sum + (nodeMap.get(parentId)?.position?.x || 0), 0) / parents.length
+        return average
+      }
+      return parentIndex(a) - parentIndex(b)
+    })
+
+    const levelWidth = orderedIds.reduce((sum, nodeId, index) => {
+      const { width } = getNodeSize(nodeMap.get(nodeId))
+      return sum + width + (index > 0 ? LAYOUT_COLUMN_GAP : 0)
+    }, 0)
+
+    let currentX = -levelWidth / 2
+    const levelY = startY + (level * (DEFAULT_NODE_HEIGHT + LAYOUT_ROW_GAP))
+    let rowBottom = levelY
+
+    orderedIds.forEach((nodeId) => {
+      const node = nodeMap.get(nodeId)
+      const { width, height } = getNodeSize(node)
+      positions.push({
+        id: nodeId,
+        position: {
+          x: Math.round(currentX),
+          y: Math.round(levelY),
+        },
+      })
+      currentX += width + LAYOUT_COLUMN_GAP
+      rowBottom = Math.max(rowBottom, levelY + height)
+    })
+
+    maxBottom = Math.max(maxBottom, rowBottom)
+  })
+
+  return {
+    positions,
+    bottomY: maxBottom,
+  }
+}
+
+const createAutoLayout = ({ nodes, edges, entryNodeId }) => {
+  const nodeMap = new Map(nodes.map(node => [node.id, node]))
+  const forwardAdjacency = new Map()
+  const reverseAdjacency = new Map()
+  const undirectedAdjacency = new Map()
+
+  nodes.forEach((node) => {
+    forwardAdjacency.set(node.id, new Set())
+    reverseAdjacency.set(node.id, new Set())
+    undirectedAdjacency.set(node.id, new Set())
+  })
+
+  edges.forEach((edge) => {
+    if (!nodeMap.has(edge.source) || !nodeMap.has(edge.target)) return
+    forwardAdjacency.get(edge.source)?.add(edge.target)
+    reverseAdjacency.get(edge.target)?.add(edge.source)
+    undirectedAdjacency.get(edge.source)?.add(edge.target)
+    undirectedAdjacency.get(edge.target)?.add(edge.source)
+  })
+
+  const positions = []
+  const laidOut = new Set()
+  let currentY = 0
+
+  const layoutComponent = (seedId) => {
+    if (!seedId || laidOut.has(seedId) || !nodeMap.has(seedId)) return
+
+    const componentIds = []
+    const stack = [seedId]
+    laidOut.add(seedId)
+
+    while (stack.length) {
+      const nodeId = stack.pop()
+      componentIds.push(nodeId)
+      ;[...(undirectedAdjacency.get(nodeId) || [])]
+        .sort((a, b) => (nodeMap.get(a)?.position?.y || 0) - (nodeMap.get(b)?.position?.y || 0))
+        .forEach((nextId) => {
+          if (laidOut.has(nextId)) return
+          laidOut.add(nextId)
+          stack.push(nextId)
+        })
+    }
+
+    const allowedIds = new Set(componentIds)
+    const candidateRoots = componentIds.filter((nodeId) => {
+      const parents = [...(reverseAdjacency.get(nodeId) || [])].filter(parentId => allowedIds.has(parentId))
+      return parents.length === 0
+    })
+    const startIds = candidateRoots.length
+      ? candidateRoots.sort((a, b) => (nodeMap.get(a)?.position?.x || 0) - (nodeMap.get(b)?.position?.x || 0))
+      : [seedId]
+
+    const layout = buildComponentLayout({
+      startIds,
+      nodeMap,
+      forwardAdjacency,
+      incomingAdjacency: reverseAdjacency,
+      allowedIds: componentIds,
+      startY: currentY,
+    })
+
+    positions.push(...layout.positions)
+    currentY = layout.bottomY + COMPONENT_GAP
+  }
+
+  layoutComponent(entryNodeId)
+
+  nodes
+    .map(node => node.id)
+    .filter(nodeId => !laidOut.has(nodeId))
+    .sort((a, b) => {
+      const aNode = nodeMap.get(a)
+      const bNode = nodeMap.get(b)
+      return (aNode?.position?.y || 0) - (bNode?.position?.y || 0) || (aNode?.position?.x || 0) - (bNode?.position?.x || 0)
+    })
+    .forEach(layoutComponent)
+
+  return positions
+}
 
 const GraphEditorInner = () => {
   const { agentId } = useParams()
   const navigate = useNavigate()
   const reactFlowWrapper = useRef(null)
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, fitView } = useReactFlow()
 
   const {
     agent, nodes, edges, isDirty,
     loadGraph, onNodesChange, onEdgesChange,
     addNode, addEdge: storeAddEdge, selectNode, selectEdge, clearSelection,
-    setAgent,
+    setAgent, setNodePositions, layoutUndoSnapshot, setLayoutUndoSnapshot, clearLayoutUndoSnapshot,
   } = useGraphStore()
 
   const [loading, setLoading] = useState(true)
@@ -39,6 +225,7 @@ const GraphEditorInner = () => {
   const [showConfigPanel, setShowConfigPanel] = useState(true)
   const [configPanelWidth, setConfigPanelWidth] = useState(320)
   const [isResizingPanel, setIsResizingPanel] = useState(false)
+  const [isRearranging, setIsRearranging] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -173,6 +360,80 @@ const GraphEditorInner = () => {
     }
   }, [isResizingPanel])
 
+  const persistNodePositions = useCallback(async (positions) => {
+    const updates = positions.map(({ id, position }) => {
+      const node = nodes.find(currentNode => currentNode.id === id)
+      if (!node?.data?.id) return Promise.resolve()
+      return updateNode(node.data.id, {
+        position_x: position.x,
+        position_y: position.y,
+      })
+    })
+
+    const results = await Promise.allSettled(updates)
+    return results.every(result => result.status === 'fulfilled')
+  }, [nodes])
+
+  const handleRearrangeFromEntry = useCallback(async () => {
+    if (!agent?.entry_node || !nodes.length || isRearranging) return
+
+    const entryNode = nodes.find(node => node.data?.name === agent.entry_node)
+    if (!entryNode) {
+      toast.error('Entry node not found in the current graph')
+      return
+    }
+
+    const nextPositions = createAutoLayout({
+      nodes,
+      edges,
+      entryNodeId: entryNode.id,
+    })
+
+    if (!nextPositions.length) return
+
+    const previousPositions = nodes.map(node => ({
+      id: node.id,
+      position: { ...node.position },
+    }))
+
+    setIsRearranging(true)
+    setNodePositions(nextPositions)
+    setLayoutUndoSnapshot(previousPositions)
+
+    const persisted = await persistNodePositions(nextPositions)
+    setIsRearranging(false)
+
+    if (!persisted) {
+      toast.error('Graph rearranged, but some node positions failed to save')
+    } else {
+      toast.success('Graph rearranged from entry node')
+    }
+
+    requestAnimationFrame(() => {
+      fitView({ padding: 0.2, duration: 400 })
+    })
+  }, [agent?.entry_node, edges, fitView, isRearranging, nodes, persistNodePositions, setLayoutUndoSnapshot, setNodePositions])
+
+  const handleUndoRearrange = useCallback(async () => {
+    if (!layoutUndoSnapshot?.length || isRearranging) return
+
+    setIsRearranging(true)
+    setNodePositions(layoutUndoSnapshot)
+    const persisted = await persistNodePositions(layoutUndoSnapshot)
+    setIsRearranging(false)
+
+    if (!persisted) {
+      toast.error('Previous layout restored, but some node positions failed to save')
+      return
+    }
+
+    clearLayoutUndoSnapshot()
+    toast.success('Previous layout restored')
+    requestAnimationFrame(() => {
+      fitView({ padding: 0.2, duration: 300 })
+    })
+  }, [clearLayoutUndoSnapshot, fitView, isRearranging, layoutUndoSnapshot, persistNodePositions, setNodePositions])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen" style={{ background: 'var(--bg)' }}>
@@ -191,6 +452,10 @@ const GraphEditorInner = () => {
         isDirty={isDirty}
         onSchemaEdit={() => setShowSchemaEditor(true)}
         onRun={() => setShowRunModal(true)}
+        onRearrangeGraph={handleRearrangeFromEntry}
+        onUndoLayout={handleUndoRearrange}
+        canUndoLayout={Boolean(layoutUndoSnapshot?.length)}
+        isRearranging={isRearranging}
       />
 
       <div className="flex flex-1 overflow-hidden">

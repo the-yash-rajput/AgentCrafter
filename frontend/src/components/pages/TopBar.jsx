@@ -1,16 +1,26 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Play, Database, Download, Upload, Copy, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Play, Database, Download, Upload, Copy, CheckCircle, AlertCircle, ChevronDown, Sparkles, Undo2 } from 'lucide-react'
 import { updateAgent, validateAgent, exportAgent } from '../../api/client'
 import { useGraphStore } from '../../hooks/useGraphStore'
 import toast from 'react-hot-toast'
 
-export const TopBar = ({ agent, isDirty, onSchemaEdit, onRun }) => {
+export const TopBar = ({
+  agent,
+  isDirty,
+  onSchemaEdit,
+  onRun,
+  onRearrangeGraph,
+  onUndoLayout,
+  canUndoLayout = false,
+  isRearranging = false,
+}) => {
   const navigate = useNavigate()
   const { setAgent } = useGraphStore()
   const [saving, setSaving] = useState(false)
   const [validation, setValidation] = useState(null)
   const [showMenu, setShowMenu] = useState(false)
+  const hasEntryNode = Boolean(agent?.entry_node)
 
   const handleSaveAgent = async () => {
     if (!agent) return
@@ -126,6 +136,27 @@ export const TopBar = ({ agent, isDirty, onSchemaEdit, onRun }) => {
       >
         <Download size={12} /> Export
       </button>
+
+      <button
+        onClick={onRearrangeGraph}
+        disabled={!hasEntryNode || !onRearrangeGraph || isRearranging}
+        title={hasEntryNode ? 'Rearrange graph from the entry node' : 'Set an entry node to enable graph rearrange'}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:opacity-80 disabled:opacity-50"
+        style={{ background: '#6366f1', border: '1px solid #818cf8', color: '#fff' }}
+      >
+        <Sparkles size={12} /> {isRearranging ? 'Rearranging...' : 'Rearrange'}
+      </button>
+
+      {canUndoLayout && (
+        <button
+          onClick={onUndoLayout}
+          disabled={!onUndoLayout || isRearranging}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:opacity-80 disabled:opacity-50"
+          style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text-dim)' }}
+        >
+          <Undo2 size={12} /> Undo
+        </button>
+      )}
 
       <button
         onClick={onRun}

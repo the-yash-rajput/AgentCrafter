@@ -86,6 +86,25 @@ export const RunModal = ({ agent, onClose }) => {
       return
     }
 
+    if (Array.isArray(inputData)) {
+      toast.error('Run input must be a single JSON object, not a list of examples')
+      return
+    }
+
+    if (!inputData || typeof inputData !== 'object') {
+      toast.error('Run input must be a JSON object')
+      return
+    }
+
+    if (
+      inputData.input_data &&
+      typeof inputData.input_data === 'object' &&
+      !Array.isArray(inputData.input_data) &&
+      Object.keys(inputData).every(key => key === 'input_data' || key === 'name')
+    ) {
+      inputData = inputData.input_data
+    }
+
     setRunning(true)
     setResult(null)
     try {
