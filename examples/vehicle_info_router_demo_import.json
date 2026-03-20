@@ -1,0 +1,276 @@
+{
+  "agent": {
+    "name": "Vehicle Info Router Demo",
+    "description": "Demo graph that takes vehicle type (TW or FW) and vehicle name, routes to the correct LLM node, and returns vehicle information.",
+    "input_schema": {
+      "vehicle_type": {
+        "type": "string",
+        "description": "Vehicle type. Expected values: TW or FW"
+      },
+      "vehicle_name": {
+        "type": "string",
+        "description": "Vehicle name provided by the user"
+      }
+    },
+    "output_schema": {
+      "normalized_vehicle_type": {
+        "type": "string"
+      },
+      "vehicle_route": {
+        "type": "string"
+      },
+      "vehicle_info": {
+        "type": "string"
+      },
+      "final_summary": {
+        "type": "string"
+      }
+    },
+    "state_schema": {
+      "vehicle_type": {
+        "type": "string",
+        "default": "TW"
+      },
+      "vehicle_name": {
+        "type": "string",
+        "default": "Activa"
+      },
+      "normalized_vehicle_type": {
+        "type": "string",
+        "default": "TW"
+      },
+      "vehicle_route": {
+        "type": "string",
+        "default": "tw_vehicle_info_llm"
+      },
+      "vehicle_info": {
+        "type": "string",
+        "default": ""
+      }
+    },
+    "entry_node": "prepare_vehicle_request",
+    "exit_node": "final_output"
+  },
+  "nodes": [
+    {
+      "id": 3001,
+      "name": "prepare_vehicle_request",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    out.setdefault('vehicle_type', 'TW')\n    out.setdefault('vehicle_name', 'Activa')\n    out['vehicle_name'] = str(out.get('vehicle_name') or '').strip() or 'Unknown Vehicle'\n    out['vehicle_type'] = str(out.get('vehicle_type') or '').strip()\n    return out\n"
+        }
+      },
+      "position_x": 80,
+      "position_y": 220
+    },
+    {
+      "id": 3002,
+      "name": "normalize_vehicle_type",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    raw = str(out.get('vehicle_type') or '').strip().upper()\n    mapping = {\n        'TW': 'TW',\n        'TWO_WHEELER': 'TW',\n        'TWO WHEELER': 'TW',\n        'BIKE': 'TW',\n        'SCOOTER': 'TW',\n        'FW': 'FW',\n        'FOUR_WHEELER': 'FW',\n        'FOUR WHEELER': 'FW',\n        'CAR': 'FW'\n    }\n    out['normalized_vehicle_type'] = mapping.get(raw, raw)\n    return out\n"
+        }
+      },
+      "position_x": 320,
+      "position_y": 220
+    },
+    {
+      "id": 3003,
+      "name": "build_lookup_context",
+      "type": "functional",
+      "config": {
+        "function_type": "data_transform",
+        "data_transform": {
+          "operations": [
+            {
+              "type": "extract",
+              "config": {
+                "key": "vehicle_name",
+                "new_key": "lookup_vehicle_name"
+              }
+            },
+            {
+              "type": "extract",
+              "config": {
+                "key": "normalized_vehicle_type",
+                "new_key": "lookup_vehicle_type"
+              }
+            },
+            {
+              "type": "merge",
+              "config": {
+                "data": {
+                  "lookup_stage": "vehicle_info_lookup"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "position_x": 560,
+      "position_y": 220
+    },
+    {
+      "id": 3004,
+      "name": "route_by_vehicle_type",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    vehicle_type = str(out.get('normalized_vehicle_type') or '').upper()\n    if vehicle_type == 'TW':\n        out['vehicle_route'] = 'tw_vehicle_info_llm'\n    elif vehicle_type == 'FW':\n        out['vehicle_route'] = 'fw_vehicle_info_llm'\n    else:\n        out['vehicle_route'] = 'unsupported_vehicle_type'\n    return out\n"
+        }
+      },
+      "position_x": 820,
+      "position_y": 220
+    },
+    {
+      "id": 3005,
+      "name": "tw_vehicle_info_llm",
+      "type": "llm_call",
+      "config": {
+        "provider": "demo_mock",
+        "model": "demo-response",
+        "system_prompt": "You are a demo assistant for two wheeler information.",
+        "user_prompt_template": "Provide information about the two wheeler {{vehicle_name}}.",
+        "mock_response_template": "{{vehicle_name}} is identified as a Two Wheeler. Demo info: category=light vehicle, best for city commute, wheel_count=2, lookup_stage={{lookup_stage}}.",
+        "temperature": 0,
+        "max_tokens": 120,
+        "output_key": "vehicle_info",
+        "parse_json_response": false
+      },
+      "position_x": 1100,
+      "position_y": 110
+    },
+    {
+      "id": 3006,
+      "name": "fw_vehicle_info_llm",
+      "type": "llm_call",
+      "config": {
+        "provider": "demo_mock",
+        "model": "demo-response",
+        "system_prompt": "You are a demo assistant for four wheeler information.",
+        "user_prompt_template": "Provide information about the four wheeler {{vehicle_name}}.",
+        "mock_response_template": "{{vehicle_name}} is identified as a Four Wheeler. Demo info: category=passenger vehicle, best for family travel, wheel_count=4, lookup_stage={{lookup_stage}}.",
+        "temperature": 0,
+        "max_tokens": 120,
+        "output_key": "vehicle_info",
+        "parse_json_response": false
+      },
+      "position_x": 1100,
+      "position_y": 240
+    },
+    {
+      "id": 3007,
+      "name": "unsupported_vehicle_type",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    out['vehicle_info'] = f\"Unsupported vehicle type: {out.get('vehicle_type')}. Please use TW or FW.\"\n    return out\n"
+        }
+      },
+      "position_x": 1100,
+      "position_y": 370
+    },
+    {
+      "id": 3008,
+      "name": "final_output",
+      "type": "functional",
+      "config": {
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    out = dict(state or {})\n    out['final_summary'] = f\"vehicle_name={out.get('vehicle_name')} | type={out.get('normalized_vehicle_type')} | info={out.get('vehicle_info')}\"\n    return out\n"
+        }
+      },
+      "position_x": 1400,
+      "position_y": 220
+    }
+  ],
+  "edges": [
+    {
+      "source_node_id": 3001,
+      "target_node_id": 3002,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 3002,
+      "target_node_id": 3003,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 3003,
+      "target_node_id": 3004,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 3004,
+      "target_node_id": 3005,
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "vehicle_route",
+          "value": "tw_vehicle_info_llm"
+        }
+      },
+      "label": "tw_vehicle_info_llm"
+    },
+    {
+      "source_node_id": 3004,
+      "target_node_id": 3006,
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "vehicle_route",
+          "value": "fw_vehicle_info_llm"
+        }
+      },
+      "label": "fw_vehicle_info_llm"
+    },
+    {
+      "source_node_id": 3004,
+      "target_node_id": 3007,
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "vehicle_route",
+          "value": "unsupported_vehicle_type"
+        }
+      },
+      "label": "unsupported_vehicle_type"
+    },
+    {
+      "source_node_id": 3005,
+      "target_node_id": 3008,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 3006,
+      "target_node_id": 3008,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    },
+    {
+      "source_node_id": 3007,
+      "target_node_id": 3008,
+      "edge_type": "direct",
+      "condition_config": {},
+      "label": ""
+    }
+  ]
+}

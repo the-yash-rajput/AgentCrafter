@@ -1,7 +1,7 @@
 {
   "agent": {
     "name": "Basic Demo Workflow",
-    "description": "Small demo graph with one LLM node, functional nodes, direct edges, and conditional edges. Safe to run without external API keys.",
+    "description": "Small demo graph with one mock LLM node, functional nodes, direct edges, and conditional edges. Runs without external API keys and clearly shows both branches.",
     "input_schema": {
       "customer_name": {
         "type": "string",

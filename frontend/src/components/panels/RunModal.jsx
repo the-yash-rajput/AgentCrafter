@@ -66,14 +66,7 @@ const SnapshotItem = ({ snapshot, index }) => {
 }
 
 export const RunModal = ({ agent, onClose }) => {
-  const [inputJson, setInputJson] = useState(JSON.stringify({
-    messages: [
-      { role: 'user', content: 'I need a quote for my car' }
-    ],
-    current_phase: 'pre_data_collection',
-    collected_data: {},
-    uploaded_documents: [],
-  }, null, 2))
+  const [inputJson, setInputJson] = useState(JSON.stringify({}, null, 2))
   const [result, setResult] = useState(null)
   const [running, setRunning] = useState(false)
 
