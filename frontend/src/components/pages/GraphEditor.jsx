@@ -315,7 +315,7 @@ const GraphEditorInner = () => {
       }
       storeAddEdge(newEdge)
     } catch (e) {
-      toast.error('Failed to create edge')
+      toast.error(e.response?.data?.detail || 'Failed to create edge')
     }
   }, [agentId, storeAddEdge])
 

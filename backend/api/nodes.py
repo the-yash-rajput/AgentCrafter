@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
+from agent_exit_nodes import get_agent_exit_nodes
 from db.session import get_db
 from models import Node, Agent
 from schemas.schemas import NodeCreate, NodeUpdate, NodeResponse
@@ -40,8 +41,22 @@ def update_node(node_id: int, payload: NodeUpdate, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="Node not found")
 
     update_data = payload.model_dump(exclude_unset=True)
+    previous_name = node.name
     for key, value in update_data.items():
         setattr(node, key, value)
+
+    renamed = "name" in update_data and update_data["name"] != previous_name
+    if renamed:
+        agent = db.query(Agent).filter(Agent.id == node.agent_id).first()
+        if agent:
+            if agent.entry_node == previous_name:
+                agent.entry_node = node.name
+            exit_nodes = [
+                node.name if exit_name == previous_name else exit_name
+                for exit_name in get_agent_exit_nodes(agent)
+            ]
+            agent.exit_nodes = exit_nodes
+            agent.exit_node = exit_nodes[0] if exit_nodes else None
 
     try:
         db.commit()
@@ -57,6 +72,15 @@ def delete_node(node_id: int, db: Session = Depends(get_db)):
     node = db.query(Node).filter(Node.id == node_id).first()
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
+
+    agent = db.query(Agent).filter(Agent.id == node.agent_id).first()
+    if agent:
+        if agent.entry_node == node.name:
+            agent.entry_node = None
+        exit_nodes = [exit_name for exit_name in get_agent_exit_nodes(agent) if exit_name != node.name]
+        agent.exit_nodes = exit_nodes
+        agent.exit_node = exit_nodes[0] if exit_nodes else None
+
     db.delete(node)
     db.commit()
     return {"message": "Node deleted"}

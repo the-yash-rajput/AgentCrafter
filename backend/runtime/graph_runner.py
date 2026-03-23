@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session, load_only
 from langgraph.graph import StateGraph, END
 
+from agent_exit_nodes import get_agent_exit_nodes
 from models import Agent, Node, Edge, Run, RunStatus, NodeType, EdgeType
 from runtime.node_builders import build_functional_node, build_llm_node, build_condition_router
 from runtime.langfuse_tracing import (
@@ -151,14 +152,29 @@ class GraphRunner:
             for target_name, _edge in direct_edges:
                 workflow.add_edge(source, target_name)
 
-        valid_exit = agent.exit_node if agent.exit_node in node_map else None
-        if valid_exit:
-            workflow.set_finish_point(valid_exit)
+        configured_exit_nodes = get_agent_exit_nodes(agent)
+        invalid_exit_nodes = [node_name for node_name in configured_exit_nodes if node_name not in node_map]
+        if invalid_exit_nodes:
+            raise ValueError(f"Exit nodes do not exist: {', '.join(invalid_exit_nodes)}")
+
+        valid_exit_nodes = []
+        non_leaf_exit_nodes = []
+        for node_name in configured_exit_nodes:
+            if edges_by_source.get(node_name):
+                non_leaf_exit_nodes.append(node_name)
+                continue
+            valid_exit_nodes.append(node_name)
+
+        if non_leaf_exit_nodes:
+            raise ValueError(f"Exit nodes must be leaf nodes: {', '.join(non_leaf_exit_nodes)}")
+
+        for exit_node in valid_exit_nodes:
+            workflow.set_finish_point(exit_node)
 
         for node_name in node_map:
             if edges_by_source.get(node_name):
                 continue
-            if valid_exit and node_name == valid_exit:
+            if node_name in valid_exit_nodes:
                 continue
             workflow.add_edge(node_name, END)
 
@@ -220,8 +236,24 @@ class GraphRunner:
         if agent.entry_node and agent.entry_node not in node_names:
             errors.append(f"Entry node '{agent.entry_node}' does not exist")
 
-        if agent.exit_node and agent.exit_node not in node_names:
-            errors.append(f"Exit node '{agent.exit_node}' does not exist")
+        exit_nodes = get_agent_exit_nodes(agent)
+        invalid_exit_nodes = [node_name for node_name in exit_nodes if node_name not in node_names]
+        if invalid_exit_nodes:
+            errors.extend([f"Exit node '{node_name}' does not exist" for node_name in invalid_exit_nodes])
+
+        outgoing_node_ids = {
+            source_node_id
+            for source_node_id, _target_node_id in (
+                (edge.source_node_id, edge.target_node_id) for edge in edges
+            )
+        }
+        node_name_to_id = {node.name: node.id for node in nodes}
+        non_leaf_exit_nodes = [
+            node_name for node_name in exit_nodes
+            if node_name in node_name_to_id and node_name_to_id[node_name] in outgoing_node_ids
+        ]
+        if non_leaf_exit_nodes:
+            errors.extend([f"Exit node '{node_name}' must be a leaf node" for node_name in non_leaf_exit_nodes])
 
         for edge in edges:
             if edge.source_node_id not in node_ids:

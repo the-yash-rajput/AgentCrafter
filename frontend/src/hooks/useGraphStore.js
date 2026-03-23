@@ -1,6 +1,20 @@
 import { create } from 'zustand'
 import { applyNodeChanges, applyEdgeChanges } from 'reactflow'
 
+const normalizeAgent = (agent) => {
+  if (!agent) return agent
+  const rawExitNodes = Array.isArray(agent.exit_nodes)
+    ? agent.exit_nodes.filter(name => typeof name === 'string' && name.trim())
+    : (agent.exit_node ? [agent.exit_node] : [])
+  const exitNodes = [...new Set(rawExitNodes)]
+
+  return {
+    ...agent,
+    exit_nodes: exitNodes,
+    exit_node: exitNodes[0] || null,
+  }
+}
+
 export const useGraphStore = create((set, get) => ({
   agent: null,
   nodes: [],
@@ -10,17 +24,18 @@ export const useGraphStore = create((set, get) => ({
   isDirty: false,
   layoutUndoSnapshot: null,
 
-  setAgent: (agent) => set({ agent }),
+  setAgent: (agent) => set({ agent: normalizeAgent(agent) }),
 
   loadGraph: (agent) => {
-    const rfNodes = (agent.nodes || []).map(n => ({
+    const normalizedAgent = normalizeAgent(agent)
+    const rfNodes = (normalizedAgent.nodes || []).map(n => ({
       id: String(n.id),
       type: n.type === 'llm_call' ? 'llmNode' : 'functionalNode',
       position: { x: n.position_x || 0, y: n.position_y || 0 },
       data: { ...n, label: n.name },
     }))
 
-    const rfEdges = (agent.edges || []).map(e => ({
+    const rfEdges = (normalizedAgent.edges || []).map(e => ({
       id: String(e.id),
       source: String(e.source_node_id),
       target: String(e.target_node_id),
@@ -31,7 +46,7 @@ export const useGraphStore = create((set, get) => ({
     }))
 
     set({
-      agent,
+      agent: normalizedAgent,
       nodes: rfNodes,
       edges: rfEdges,
       isDirty: false,
@@ -70,11 +85,23 @@ export const useGraphStore = create((set, get) => ({
   },
 
   removeNode: (nodeId) => {
-    set(state => ({
-      nodes: state.nodes.filter(n => n.id !== nodeId),
-      edges: state.edges.filter(e => e.source !== nodeId && e.target !== nodeId),
-      isDirty: true,
-    }))
+    set(state => {
+      const removedNode = state.nodes.find(n => n.id === nodeId)
+      const removedName = removedNode?.data?.name
+      const exitNodes = (state.agent?.exit_nodes || []).filter(name => name !== removedName)
+
+      return {
+        agent: state.agent ? {
+          ...state.agent,
+          entry_node: state.agent.entry_node === removedName ? null : state.agent.entry_node,
+          exit_nodes: exitNodes,
+          exit_node: exitNodes[0] || null,
+        } : state.agent,
+        nodes: state.nodes.filter(n => n.id !== nodeId),
+        edges: state.edges.filter(e => e.source !== nodeId && e.target !== nodeId),
+        isDirty: true,
+      }
+    })
   },
 
   addEdge: (edge) => {

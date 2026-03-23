@@ -6,7 +6,7 @@ const NodeBase = ({ id, data, type, icon: Icon, color, glowClass, headerLabel })
   const { selectNode, selectedNode, agent } = useGraphStore()
   const isSelected = selectedNode?.id === id
   const isEntry = agent?.entry_node === data?.name
-  const isExit = agent?.exit_node === data?.name
+  const isExit = (agent?.exit_nodes || []).includes(data?.name)
 
   return (
     <div

@@ -63,6 +63,14 @@ const AgentCard = ({ agent, onEdit, onDelete, onDuplicate, onRun }) => {
             <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{agent.entry_node}</span>
           </div>
         )}
+        {Array.isArray(agent.exit_nodes) && agent.exit_nodes.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <Activity size={10} style={{ color: '#f59e0b' }} />
+            <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+              {agent.exit_nodes.length} exit{agent.exit_nodes.length > 1 ? 's' : ''}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Date */}

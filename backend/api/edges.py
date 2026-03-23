@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
+from agent_exit_nodes import get_agent_exit_nodes
 from db.session import get_db
 from models import Edge, Agent, Node
 from schemas.schemas import EdgeCreate, EdgeUpdate, EdgeResponse
@@ -18,6 +19,8 @@ def add_edge(agent_id: int, payload: EdgeCreate, db: Session = Depends(get_db)):
     target_node = db.query(Node).filter(Node.agent_id == agent_id, Node.id == payload.target_node_id).first()
     if not source_node or not target_node:
         raise HTTPException(status_code=400, detail="source_node_id and target_node_id must reference existing node IDs in this agent")
+    if source_node.name in get_agent_exit_nodes(agent):
+        raise HTTPException(status_code=400, detail=f"Cannot add outgoing edges from exit node '{source_node.name}'")
 
     edge = Edge(
         agent_id=agent_id,
@@ -44,10 +47,13 @@ def update_edge(edge_id: int, payload: EdgeUpdate, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="Edge not found")
 
     update_data = payload.model_dump(exclude_unset=True)
+    agent = db.query(Agent).filter(Agent.id == edge.agent_id).first()
     if "source_node_id" in update_data:
         source = db.query(Node).filter(Node.agent_id == edge.agent_id, Node.id == update_data["source_node_id"]).first()
         if not source:
             raise HTTPException(status_code=400, detail="Invalid source_node_id for this agent")
+        if agent and source.name in get_agent_exit_nodes(agent):
+            raise HTTPException(status_code=400, detail=f"Cannot add outgoing edges from exit node '{source.name}'")
     if "target_node_id" in update_data:
         target = db.query(Node).filter(Node.agent_id == edge.agent_id, Node.id == update_data["target_node_id"]).first()
         if not target:

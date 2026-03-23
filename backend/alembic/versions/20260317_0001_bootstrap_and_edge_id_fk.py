@@ -228,7 +228,10 @@ def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     existing_tables = set(inspector.get_table_names())
-    if not existing_tables:
+    # On a brand-new database Alembic may create `alembic_version` before
+    # invoking this revision, so ignore it when deciding whether to bootstrap
+    # the full application schema.
+    if not (existing_tables - {"alembic_version"}):
         _create_full_schema()
         return
 

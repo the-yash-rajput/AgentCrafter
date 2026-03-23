@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Trash2, Brain, Zap, ChevronDown, ChevronRight, Flag, LogOut } from 'lucide-react'
 import { useGraphStore } from '../../hooks/useGraphStore'
-import { updateNode, deleteNode, updateAgent } from '../../api/client'
+import { updateNode, deleteNode, updateAgent, updateEdge } from '../../api/client'
 import toast from 'react-hot-toast'
 import Editor from '@monaco-editor/react'
 
@@ -284,7 +284,6 @@ const EdgeConfigPanel = ({ edge, onClose }) => {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const { updateEdge } = await import('../../api/client')
       await updateEdge(edge.id, { edge_type: edgeType, condition_config: config, label })
       updateEdgeData(edge.id, { edge_type: edgeType, condition_config: config, label })
       toast.success('Edge updated')
@@ -390,7 +389,7 @@ const EdgeConfigPanel = ({ edge, onClose }) => {
 // ─── Main Config Panel ─────────────────────────────────────────────────────────
 
 export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
-  const { selectedNode, selectedEdge, clearSelection, agent, updateNodeData, removeNode } = useGraphStore()
+  const { selectedNode, selectedEdge, clearSelection, agent, edges, updateNodeData, removeNode, setAgent } = useGraphStore()
   const [config, setConfig] = useState({})
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
@@ -445,6 +444,9 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
   const isLLM = selectedNode.type === 'llmNode'
   const nodeId = selectedNode.id
   const nodeName = selectedNode.data?.name || selectedNode.id
+  const exitNodes = agent?.exit_nodes || []
+  const isExitNode = exitNodes.includes(nodeName)
+  const hasOutgoingEdges = edges.some(edge => edge.source === nodeId)
 
   const handleSave = async () => {
     setSaving(true)
@@ -453,6 +455,15 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
       if (nodeData.id) {
         await updateNode(nodeData.id, { name, config })
         updateNodeData(nodeId, { name, config, label: name })
+        if (name !== nodeName && agent) {
+          const nextExitNodes = exitNodes.map(exitName => exitName === nodeName ? name : exitName)
+          setAgent({
+            ...agent,
+            entry_node: agent.entry_node === nodeName ? name : agent.entry_node,
+            exit_nodes: nextExitNodes,
+            exit_node: nextExitNodes[0] || null,
+          })
+        }
         toast.success('Node saved')
       }
     } catch (e) {
@@ -474,20 +485,21 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
 
   const handleSetEntry = async () => {
     try {
-      const { updateAgent } = await import('../../api/client')
-      await updateAgent(agent.id, { entry_node: nodeName })
-      useGraphStore.setState(s => ({ agent: { ...s.agent, entry_node: nodeName } }))
+      const updated = await updateAgent(agent.id, { entry_node: nodeName })
+      setAgent(updated)
       toast.success(`${nodeName} set as entry node`)
-    } catch (e) { toast.error('Failed') }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Failed') }
   }
 
   const handleSetExit = async () => {
     try {
-      const { updateAgent } = await import('../../api/client')
-      await updateAgent(agent.id, { exit_node: nodeName })
-      useGraphStore.setState(s => ({ agent: { ...s.agent, exit_node: nodeName } }))
-      toast.success(`${nodeName} set as exit node`)
-    } catch (e) { toast.error('Failed') }
+      const nextExitNodes = isExitNode
+        ? exitNodes.filter(exitName => exitName !== nodeName)
+        : [...exitNodes, nodeName]
+      const updated = await updateAgent(agent.id, { exit_nodes: nextExitNodes })
+      setAgent(updated)
+      toast.success(isExitNode ? `${nodeName} removed from exit nodes` : `${nodeName} added to exit nodes`)
+    } catch (e) { toast.error(e.response?.data?.detail || 'Failed') }
   }
 
   return (
@@ -539,12 +551,14 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
         </button>
         <button
           onClick={handleSetExit}
-          className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:opacity-80"
+          disabled={hasOutgoingEdges && !isExitNode}
+          title={hasOutgoingEdges && !isExitNode ? 'Only leaf nodes can be marked as exits' : 'Toggle exit node'}
+          className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:opacity-80 disabled:opacity-50"
           style={{
-            background: agent?.exit_node === nodeName ? '#f59e0b33' : 'var(--surface2)',
-            color: agent?.exit_node === nodeName ? '#f59e0b' : 'var(--text-muted)',
+            background: isExitNode ? '#f59e0b33' : 'var(--surface2)',
+            color: isExitNode ? '#f59e0b' : 'var(--text-muted)',
             border: '1px solid',
-            borderColor: agent?.exit_node === nodeName ? '#f59e0b' : 'var(--border2)',
+            borderColor: isExitNode ? '#f59e0b' : 'var(--border2)',
           }}
         >
           <LogOut size={10} /> Exit

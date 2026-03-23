@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 
+from agent_exit_nodes import get_agent_exit_nodes, sync_exit_fields
 from db.session import get_db
 from models import Agent, Node, Edge, AgentStatus
 from schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, AgentWithGraph
@@ -13,15 +14,17 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 
 @router.post("", response_model=AgentResponse)
 def create_agent(payload: AgentCreate, db: Session = Depends(get_db)):
+    payload_data = sync_exit_fields(payload.model_dump(by_alias=False))
     agent = Agent(
-        name=payload.name,
-        description=payload.description,
-        input_schema=payload.input_schema or {},
-        output_schema=payload.output_schema or {},
-        state_schema=payload.state_schema or {},
-        entry_node=payload.entry_node,
-        exit_node=payload.exit_node,
-        metadata_=payload.metadata_ or {},
+        name=payload_data["name"],
+        description=payload_data.get("description"),
+        input_schema=payload_data.get("input_schema") or {},
+        output_schema=payload_data.get("output_schema") or {},
+        state_schema=payload_data.get("state_schema") or {},
+        entry_node=payload_data.get("entry_node"),
+        exit_node=payload_data.get("exit_node"),
+        exit_nodes=payload_data.get("exit_nodes") or [],
+        metadata_=payload_data.get("metadata_") or {},
     )
     db.add(agent)
     try:
@@ -60,6 +63,35 @@ def update_agent(agent_id: int, payload: AgentUpdate, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail="Agent not found")
     
     update_data = payload.model_dump(exclude_unset=True)
+    if "exit_node" in update_data or "exit_nodes" in update_data:
+        sync_exit_fields(update_data)
+        node_rows = (
+            db.query(Node.id, Node.name)
+            .filter(Node.agent_id == agent_id)
+            .all()
+        )
+        name_to_id = {name: node_id for node_id, name in node_rows}
+        missing_nodes = [name for name in update_data["exit_nodes"] if name not in name_to_id]
+        if missing_nodes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Exit nodes do not exist: {', '.join(missing_nodes)}",
+            )
+
+        outgoing_node_ids = {
+            source_node_id
+            for (source_node_id,) in db.query(Edge.source_node_id).filter(Edge.agent_id == agent_id).distinct().all()
+        }
+        non_leaf_exit_nodes = [
+            name for name in update_data["exit_nodes"]
+            if name_to_id[name] in outgoing_node_ids
+        ]
+        if non_leaf_exit_nodes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Exit nodes must be leaf nodes: {', '.join(non_leaf_exit_nodes)}",
+            )
+
     for key, value in update_data.items():
         if key == "metadata_":
             setattr(agent, "metadata_", value)
@@ -91,6 +123,7 @@ def duplicate_agent(agent_id: int, db: Session = Depends(get_db)):
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
+    exit_nodes = get_agent_exit_nodes(agent)
     new_agent = Agent(
         name=f"{agent.name} (copy)",
         description=agent.description,
@@ -99,7 +132,8 @@ def duplicate_agent(agent_id: int, db: Session = Depends(get_db)):
         output_schema=agent.output_schema,
         state_schema=agent.state_schema,
         entry_node=agent.entry_node,
-        exit_node=agent.exit_node,
+        exit_node=(exit_nodes[0] if exit_nodes else None),
+        exit_nodes=exit_nodes,
         metadata_=agent.metadata_,
     )
     db.add(new_agent)
@@ -150,6 +184,7 @@ def export_agent(agent_id: int, db: Session = Depends(get_db)):
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
+    exit_nodes = get_agent_exit_nodes(agent)
     return {
         "agent": {
             "name": agent.name,
@@ -158,7 +193,8 @@ def export_agent(agent_id: int, db: Session = Depends(get_db)):
             "output_schema": agent.output_schema,
             "state_schema": agent.state_schema,
             "entry_node": agent.entry_node,
-            "exit_node": agent.exit_node,
+            "exit_node": (exit_nodes[0] if exit_nodes else None),
+            "exit_nodes": exit_nodes,
         },
         "nodes": [
             {"id": n.id, "name": n.name, "type": n.type.value, "config": n.config,
@@ -175,7 +211,7 @@ def export_agent(agent_id: int, db: Session = Depends(get_db)):
 
 @router.post("/import", response_model=AgentResponse)
 def import_agent(data: dict, db: Session = Depends(get_db)):
-    agent_data = data.get("agent", {})
+    agent_data = sync_exit_fields(dict(data.get("agent", {})))
     new_agent = Agent(**agent_data)
     db.add(new_agent)
     db.flush()

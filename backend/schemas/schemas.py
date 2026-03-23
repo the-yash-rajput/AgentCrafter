@@ -14,6 +14,7 @@ class AgentCreate(BaseModel):
     state_schema: dict = Field(default_factory=dict)
     entry_node: Optional[str] = None
     exit_node: Optional[str] = None
+    exit_nodes: List[str] = Field(default_factory=list)
     metadata_: dict = Field(default_factory=dict, alias="metadata")
 
     class Config:
@@ -29,6 +30,7 @@ class AgentUpdate(BaseModel):
     state_schema: Optional[dict] = None
     entry_node: Optional[str] = None
     exit_node: Optional[str] = None
+    exit_nodes: Optional[List[str]] = None
     metadata_: Optional[dict] = Field(default=None, alias="metadata")
 
     class Config:
@@ -45,6 +47,7 @@ class AgentResponse(BaseModel):
     state_schema: dict
     entry_node: Optional[str]
     exit_node: Optional[str]
+    exit_nodes: List[str] = Field(default_factory=list)
     metadata: dict = Field(default_factory=dict, alias="metadata_")
     created_at: datetime
     updated_at: datetime
