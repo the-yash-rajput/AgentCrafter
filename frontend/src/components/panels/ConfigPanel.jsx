@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Trash2, Brain, Zap, ChevronDown, ChevronRight, Flag, LogOut } from 'lucide-react'
 import { useGraphStore } from '../../hooks/useGraphStore'
-import { updateNode, deleteNode, updateAgent, updateEdge } from '../../api/client'
+import { updateNode, deleteNode, updateAgent, updateEdge, getAgents } from '../../api/client'
 import toast from 'react-hot-toast'
 import Editor from '@monaco-editor/react'
 
@@ -179,10 +179,27 @@ const LLMNodeConfig = ({ config, onChange }) => {
 
 // ─── Functional Node Config ────────────────────────────────────────────────────
 
-const FunctionalNodeConfig = ({ config, onChange }) => {
+const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
   const cfg = config || {}
   const set = (key, val) => onChange({ ...cfg, [key]: val })
   const setNested = (section, key, val) => onChange({ ...cfg, [section]: { ...(cfg[section] || {}), [key]: val } })
+  const [availableAgents, setAvailableAgents] = useState([])
+
+  useEffect(() => {
+    let isActive = true
+    const loadAgents = async () => {
+      try {
+        const agents = await getAgents()
+        if (!isActive) return
+        setAvailableAgents(agents.filter(agent => agent.id !== currentAgentId))
+      } catch (_error) {
+        if (!isActive) return
+        setAvailableAgents([])
+      }
+    }
+    loadAgents()
+    return () => { isActive = false }
+  }, [currentAgentId])
 
   return (
     <>
@@ -192,6 +209,7 @@ const FunctionalNodeConfig = ({ config, onChange }) => {
             { value: 'python_inline', label: 'Python Inline' },
             { value: 'api_call', label: 'API Call' },
             { value: 'data_transform', label: 'Data Transform' },
+            { value: 'agent_call', label: 'Agent Call' },
           ]} />
         </Field>
       </Section>
@@ -258,6 +276,94 @@ const FunctionalNodeConfig = ({ config, onChange }) => {
               options={{ minimap: { enabled: false }, fontSize: 12, lineNumbers: 'off' }}
             />
           </div>
+        </Section>
+      )}
+
+      {cfg.function_type === 'agent_call' && (
+        <Section title="Agent Handoff">
+          <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+            Use this as a terminal handoff to another agent. The child agent runs immediately and can return merged state.
+          </p>
+          <Field label="Target Agent">
+            <Select
+              value={String(cfg.agent_call?.target_agent_id || '')}
+              onChange={(value) => {
+                const selectedAgent = availableAgents.find(agent => String(agent.id) === value)
+                set('agent_call', {
+                  ...(cfg.agent_call || {}),
+                  target_agent_id: value,
+                  target_agent_name: selectedAgent?.name || '',
+                })
+              }}
+              options={[
+                { value: '', label: availableAgents.length ? 'Select an agent' : 'No other agents available' },
+                ...availableAgents.map(agent => ({
+                  value: String(agent.id),
+                  label: `${agent.name} (#${agent.id})`,
+                })),
+              ]}
+            />
+          </Field>
+          <Field label="Input Mode">
+            <Select
+              value={cfg.agent_call?.input_mode || 'entire_state'}
+              onChange={value => setNested('agent_call', 'input_mode', value)}
+              options={[
+                { value: 'entire_state', label: 'Entire State' },
+                { value: 'state_key', label: 'Single State Key' },
+                { value: 'template', label: 'JSON Template' },
+              ]}
+            />
+          </Field>
+          {cfg.agent_call?.input_mode === 'state_key' && (
+            <Field label="Input Key">
+              <Input
+                value={cfg.agent_call?.input_key}
+                onChange={value => setNested('agent_call', 'input_key', value)}
+                placeholder="final_payload"
+              />
+            </Field>
+          )}
+          {cfg.agent_call?.input_mode === 'template' && (
+            <Field label="Input Template (JSON)">
+              <textarea
+                value={cfg.agent_call?.input_template || ''}
+                onChange={e => setNested('agent_call', 'input_template', e.target.value)}
+                rows={5}
+                placeholder='{"input": "{{input}}", "context": {{context | tojson}}}'
+                className="w-full px-3 py-2 rounded-lg text-sm font-mono outline-none resize-none"
+                style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+              />
+            </Field>
+          )}
+          <Field label="Output Mode">
+            <Select
+              value={cfg.agent_call?.output_mode || 'merge_state'}
+              onChange={value => setNested('agent_call', 'output_mode', value)}
+              options={[
+                { value: 'merge_state', label: 'Merge Child Output' },
+                { value: 'write_to_key', label: 'Write Child Output To Key' },
+              ]}
+            />
+          </Field>
+          {cfg.agent_call?.output_mode === 'write_to_key' && (
+            <Field label="Output Key">
+              <Input
+                value={cfg.agent_call?.output_key}
+                onChange={value => setNested('agent_call', 'output_key', value)}
+                placeholder="agent_result"
+              />
+            </Field>
+          )}
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={cfg.agent_call?.include_run_metadata || false}
+              onChange={e => setNested('agent_call', 'include_run_metadata', e.target.checked)}
+              className="accent-indigo-500"
+            />
+            <span style={{ color: 'var(--text-dim)' }}>Attach child run metadata</span>
+          </label>
         </Section>
       )}
     </>
@@ -569,7 +675,7 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
       <div className="flex-1 overflow-y-auto">
         {isLLM
           ? <LLMNodeConfig config={config} onChange={setConfig} />
-          : <FunctionalNodeConfig config={config} onChange={setConfig} />
+          : <FunctionalNodeConfig config={config} onChange={setConfig} currentAgentId={agent?.id} />
         }
       </div>
 

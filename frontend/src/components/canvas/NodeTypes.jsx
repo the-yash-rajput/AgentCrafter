@@ -1,5 +1,5 @@
 import { Handle, Position } from 'reactflow'
-import { Brain, Code2, Globe, GitBranch, Zap } from 'lucide-react'
+import { Brain, Boxes, Code2, Globe, GitBranch, Zap } from 'lucide-react'
 import { useGraphStore } from '../../hooks/useGraphStore'
 
 const NodeBase = ({ id, data, type, icon: Icon, color, glowClass, headerLabel }) => {
@@ -82,6 +82,7 @@ const FUNCTION_VISUALS = {
   python_inline: { icon: Code2, color: '#0ea5e9', label: 'Python Fn' },
   api_call: { icon: Globe, color: '#10b981', label: 'API Call' },
   data_transform: { icon: GitBranch, color: '#f59e0b', label: 'Transform' },
+  agent_call: { icon: Boxes, color: '#ec4899', label: 'Agent Call' },
 }
 
 export const FunctionalNode = (props) => {

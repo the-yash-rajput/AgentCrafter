@@ -271,7 +271,21 @@ const GraphEditorInner = () => {
           max_tokens: 1000,
           output_key: 'llm_response'
         }
-      : { node_type: 'functional', function_type: nodeType === 'llm_call' ? 'python_inline' : nodeType, python_inline: { code: 'def run(state):\n    return state' } }
+      : {
+          node_type: 'functional',
+          function_type: nodeType === 'llm_call' ? 'python_inline' : nodeType,
+          python_inline: { code: 'def run(state):\n    return state' },
+          agent_call: {
+            target_agent_id: '',
+            target_agent_name: '',
+            input_mode: 'entire_state',
+            input_key: '',
+            input_template: '{\n  \"input\": \"{{input}}\"\n}',
+            output_mode: 'merge_state',
+            output_key: 'agent_result',
+            include_run_metadata: true,
+          },
+        }
 
     try {
       const created = await createNode(agentId, {

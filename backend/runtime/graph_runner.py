@@ -19,9 +19,22 @@ from runtime.langfuse_tracing import (
 class GraphRunner:
     def __init__(self, db: Session):
         self.db = db
+        self.max_agent_call_depth = 8
 
-    def compile_and_run(self, agent_id: int, input_data: dict) -> dict:
+    def compile_and_run(self, agent_id: int, input_data: dict, execution_context: Optional[dict] = None) -> dict:
         """Fetch agent from DB, compile to LangGraph, and run it."""
+        execution_context = execution_context or {}
+        prior_call_stack = list(execution_context.get("call_stack") or [])
+        if agent_id in prior_call_stack:
+            cycle = prior_call_stack + [agent_id]
+            raise ValueError(f"Recursive agent call detected: {' -> '.join(map(str, cycle))}")
+        if len(prior_call_stack) >= self.max_agent_call_depth:
+            raise ValueError(f"Nested agent call depth exceeded limit of {self.max_agent_call_depth}")
+        execution_context = {
+            **execution_context,
+            "call_stack": [*prior_call_stack, agent_id],
+        }
+
         agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:
             raise ValueError(f"Agent {agent_id} not found")
@@ -65,7 +78,7 @@ class GraphRunner:
         trace_token = set_current_trace(trace)
 
         try:
-            graph = self._build_langgraph(agent, nodes, edges, snapshots)
+            graph = self._build_langgraph(agent, nodes, edges, snapshots, execution_context=execution_context)
             result = graph.invoke(current_state)
             if isinstance(result, dict):
                 current_state = result
@@ -100,7 +113,14 @@ class GraphRunner:
         finally:
             reset_current_trace(trace_token)
 
-    def _build_langgraph(self, agent: Agent, nodes: List[Node], edges: List[Edge], snapshots: list):
+    def _build_langgraph(
+        self,
+        agent: Agent,
+        nodes: List[Node],
+        edges: List[Edge],
+        snapshots: list,
+        execution_context: Optional[dict] = None,
+    ):
         """Compile agent config into an executable LangGraph graph."""
         workflow = StateGraph(dict)
 
@@ -108,7 +128,12 @@ class GraphRunner:
         node_id_to_name: Dict[int, str] = {}
         for node in nodes:
             if node.type == NodeType.functional:
-                fn = build_functional_node(node.config or {})
+                fn = build_functional_node(
+                    node.config or {},
+                    db=self.db,
+                    current_agent_id=agent.id,
+                    execution_context=execution_context,
+                )
             elif node.type == NodeType.llm_call:
                 fn = build_llm_node(node.config or {})
             else:
@@ -214,7 +239,7 @@ class GraphRunner:
 
         nodes = (
             self.db.query(Node)
-            .options(load_only(Node.id, Node.name))
+            .options(load_only(Node.id, Node.name, Node.type, Node.config))
             .filter(Node.agent_id == agent_id)
             .all()
         )
@@ -229,6 +254,11 @@ class GraphRunner:
         warnings = []
         node_names = {n.name for n in nodes}
         node_ids = {n.id for n in nodes}
+        target_agents_by_id = {
+            target_id: name
+            for target_id, name in self.db.query(Agent.id, Agent.name).all()
+        }
+        target_agents_by_name = {name: target_id for target_id, name in target_agents_by_id.items()}
 
         if not nodes:
             errors.append("Agent has no nodes")
@@ -254,6 +284,39 @@ class GraphRunner:
         ]
         if non_leaf_exit_nodes:
             errors.extend([f"Exit node '{node_name}' must be a leaf node" for node_name in non_leaf_exit_nodes])
+
+        for node in nodes:
+            if node.type != NodeType.functional:
+                continue
+            config = node.config or {}
+            if config.get("function_type") != "agent_call":
+                continue
+            agent_cfg = config.get("agent_call", {})
+            target_agent_id = agent_cfg.get("target_agent_id")
+            target_agent_name = str(agent_cfg.get("target_agent_name") or "").strip()
+
+            if target_agent_id in (None, "") and not target_agent_name:
+                errors.append(f"Agent Call node '{node.name}' is missing a target agent")
+                continue
+
+            resolved_target_id = None
+            if target_agent_id not in (None, ""):
+                try:
+                    resolved_target_id = int(target_agent_id)
+                except (TypeError, ValueError):
+                    errors.append(f"Agent Call node '{node.name}' has invalid target_agent_id '{target_agent_id}'")
+                    continue
+                if resolved_target_id not in target_agents_by_id:
+                    errors.append(f"Agent Call node '{node.name}' references unknown agent ID '{resolved_target_id}'")
+                    continue
+            elif target_agent_name:
+                resolved_target_id = target_agents_by_name.get(target_agent_name)
+                if resolved_target_id is None:
+                    errors.append(f"Agent Call node '{node.name}' references unknown agent '{target_agent_name}'")
+                    continue
+
+            if resolved_target_id == agent_id:
+                errors.append(f"Agent Call node '{node.name}' cannot target the same agent")
 
         for edge in edges:
             if edge.source_node_id not in node_ids:

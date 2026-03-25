@@ -1,4 +1,4 @@
-import { Brain, Globe, Code2, GitBranch, X } from 'lucide-react'
+import { Brain, Globe, Code2, GitBranch, X, Boxes } from 'lucide-react'
 
 const PaletteItem = ({ type, icon: Icon, label, description, color, onDragStart }) => (
   <div
@@ -89,6 +89,14 @@ export const NodePalette = ({ onClose }) => {
             label="Data Transform"
             description="Map, filter, or reshape state"
             color="#f59e0b"
+            onDragStart={onDragStart}
+          />
+          <PaletteItem
+            type="agent_call"
+            icon={Boxes}
+            label="Agent Call"
+            description="Hand off state to another agent in the workspace"
+            color="#ec4899"
             onDragStart={onDragStart}
           />
         </div>

@@ -2,14 +2,20 @@ import os
 import json
 import asyncio
 import httpx
-from typing import Any, Dict, Callable, TypedDict
+from typing import Any, Dict, Callable, TypedDict, Optional
 from jinja2 import Template
 from datetime import datetime
 from runtime.langfuse_tracing import log_llm_generation
 
 # ─── Node Builders ────────────────────────────────────────────────────────────
 
-def build_functional_node(config: dict) -> Callable:
+def build_functional_node(
+    config: dict,
+    *,
+    db=None,
+    current_agent_id: Optional[int] = None,
+    execution_context: Optional[dict] = None,
+) -> Callable:
     """Build a functional node from config."""
     function_type = config.get("function_type", "python_inline")
 
@@ -77,6 +83,96 @@ def build_functional_node(config: dict) -> Callable:
             return result
 
         return transform_node
+
+    elif function_type == "agent_call":
+        agent_cfg = config.get("agent_call", {})
+
+        def agent_call_node(state: dict) -> dict:
+            target_agent_id = agent_cfg.get("target_agent_id")
+            target_agent_name = str(agent_cfg.get("target_agent_name") or "").strip()
+            input_mode = agent_cfg.get("input_mode", "entire_state")
+            input_key = str(agent_cfg.get("input_key") or "").strip()
+            input_template = str(agent_cfg.get("input_template") or "").strip()
+            output_mode = agent_cfg.get("output_mode", "merge_state")
+            output_key = str(agent_cfg.get("output_key") or "agent_result").strip() or "agent_result"
+            include_run_metadata = bool(agent_cfg.get("include_run_metadata", False))
+
+            if db is None:
+                return {**state, "_error": "Agent Call nodes require a database session"}
+
+            from models import Agent
+            from runtime.graph_runner import GraphRunner
+
+            target_agent = None
+            if target_agent_id not in (None, ""):
+                try:
+                    target_agent = db.query(Agent).filter(Agent.id == int(target_agent_id)).first()
+                except (TypeError, ValueError):
+                    return {**state, "_error": f"Invalid target agent ID '{target_agent_id}'"}
+            elif target_agent_name:
+                target_agent = db.query(Agent).filter(Agent.name == target_agent_name).first()
+            else:
+                return {**state, "_error": "Agent Call node requires target_agent_id or target_agent_name"}
+
+            if not target_agent:
+                target_label = target_agent_name or target_agent_id
+                return {**state, "_error": f"Target agent '{target_label}' not found"}
+
+            if current_agent_id is not None and target_agent.id == current_agent_id:
+                return {**state, "_error": "Agent Call node cannot target the same agent"}
+
+            nested_input: Any
+            if input_mode == "state_key":
+                if not input_key:
+                    return {**state, "_error": "Agent Call node requires input_key for state_key mode"}
+                nested_input = state.get(input_key, {})
+            elif input_mode == "template":
+                if not input_template:
+                    return {**state, "_error": "Agent Call node requires input_template for template mode"}
+                try:
+                    rendered = Template(input_template).render(**state)
+                    nested_input = json.loads(rendered)
+                except Exception as e:
+                    return {**state, "_error": f"Failed to render agent input template: {e}"}
+            else:
+                nested_input = dict(state)
+
+            if not isinstance(nested_input, dict):
+                return {**state, "_error": "Agent Call node input must resolve to a JSON object"}
+
+            try:
+                result = GraphRunner(db).compile_and_run(
+                    target_agent.id,
+                    nested_input,
+                    execution_context=execution_context,
+                )
+            except Exception as e:
+                return {**state, "_error": str(e)}
+
+            child_output = result.get("output", {})
+            if not isinstance(child_output, dict):
+                child_output = {output_key: child_output}
+
+            next_state: dict[str, Any]
+            if output_mode == "write_to_key":
+                next_state = {**state, output_key: child_output}
+            else:
+                next_state = child_output
+
+            if include_run_metadata:
+                next_state = {
+                    **next_state,
+                    f"{output_key}_meta": {
+                        "target_agent_id": target_agent.id,
+                        "target_agent_name": target_agent.name,
+                        "run_id": result.get("run_id"),
+                        "status": result.get("status"),
+                    },
+                }
+
+            return next_state
+
+        return agent_call_node
 
     # Default passthrough
     def passthrough(state: dict) -> dict:
