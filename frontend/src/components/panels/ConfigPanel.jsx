@@ -217,7 +217,7 @@ const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
       {(cfg.function_type === 'python_inline' || !cfg.function_type) && (
         <Section title="Python Code">
           <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
-            Define a <code className="text-indigo-400">run(state)</code> function that returns a dict.
+            Define a <code className="text-indigo-400">run(state)</code> function that returns a dict. Code runs in an isolated task runner process with blocked imports and a restricted helper set.
           </p>
           <div className="rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border2)', height: 200 }}>
             <Editor
@@ -229,6 +229,27 @@ const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
               options={{ minimap: { enabled: false }, fontSize: 12, lineNumbers: 'off', scrollBeyondLastLine: false }}
             />
           </div>
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <Field label="Timeout (seconds)">
+              <Input
+                type="number"
+                value={cfg.python_inline?.timeout_seconds ?? 5}
+                onChange={value => setNested('python_inline', 'timeout_seconds', value === '' ? '' : parseFloat(value))}
+                placeholder="5"
+              />
+            </Field>
+            <Field label="Memory Limit (MB)">
+              <Input
+                type="number"
+                value={cfg.python_inline?.max_memory_mb ?? 256}
+                onChange={value => setNested('python_inline', 'max_memory_mb', value === '' ? '' : parseInt(value))}
+                placeholder="256"
+              />
+            </Field>
+          </div>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            Available helpers: <code className="text-indigo-400">json</code>, <code className="text-indigo-400">math</code>, <code className="text-indigo-400">statistics</code>, <code className="text-indigo-400">datetime</code>, <code className="text-indigo-400">timedelta</code>, <code className="text-indigo-400">uuid4</code>, <code className="text-indigo-400">re</code>. If you need print logs, return <code className="text-indigo-400">printed</code> from your function.
+          </p>
         </Section>
       )}
 

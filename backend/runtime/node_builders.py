@@ -6,6 +6,7 @@ from typing import Any, Dict, Callable, TypedDict, Optional
 from jinja2 import Template
 from datetime import datetime
 from runtime.langfuse_tracing import log_llm_generation
+from task_runner import PythonTaskConfig, PythonTaskRunner
 
 # ─── Node Builders ────────────────────────────────────────────────────────────
 
@@ -20,20 +21,18 @@ def build_functional_node(
     function_type = config.get("function_type", "python_inline")
 
     if function_type == "python_inline":
-        code = config.get("python_inline", {}).get("code", "def run(state): return state")
-        
+        inline_config = config.get("python_inline", {})
+        code = inline_config.get("code", "def run(state):\n    return state")
+        task_runner = PythonTaskRunner()
+        task_config = PythonTaskConfig.from_inline_config(inline_config)
+
         def functional_node(state: dict) -> dict:
-            local_ns = {}
             try:
-                exec(code, {"__builtins__": __builtins__}, local_ns)
-                if "run" in local_ns:
-                    result = local_ns["run"](state)
-                    if isinstance(result, dict):
-                        return result
+                result = task_runner.run(code=code, state=state, config=task_config)
+                return result.output
             except Exception as e:
                 return {**state, "_error": str(e)}
-            return state
-        
+
         return functional_node
 
     elif function_type == "api_call":

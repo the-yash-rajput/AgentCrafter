@@ -94,7 +94,7 @@ Calls an LLM provider with configurable prompts:
 
 ### Functional Node
 Three subtypes:
-- **Python Inline** — write a `run(state)` function directly in the editor
+- **Python Inline** — write a `run(state)` function directly in the editor. Inline code executes through a dedicated task-runner package in an isolated child process with timeouts, memory caps, blocked imports, and a small safe helper set.
 - **API Call** — HTTP GET/POST with URL/body templates using `{{state.key}}`
 - **Data Transform** — map/filter/extract/merge operations on state
 
