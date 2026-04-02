@@ -57,11 +57,31 @@ const NodeMeta = ({ data, type }) => {
   const cfg = data.config || {}
   if (type === 'llmNode') {
     return (
-      <div className="flex items-center gap-1.5 mt-1">
-        <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: '#7c3aed33', color: '#a78bfa' }}>
-          {cfg.provider || 'azure_openai'}
-        </span>
-        <span className="text-xs text-slate-400 truncate">{cfg.model || 'ai-agent-4o'}</span>
+      <div className="mt-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: '#7c3aed33', color: '#a78bfa' }}>
+            {cfg.provider || 'azure_openai'}
+          </span>
+          <span className="text-xs text-slate-400 truncate">{cfg.model || 'ai-agent-4o'}</span>
+        </div>
+        {(cfg.use_langfuse_prompt && cfg.langfuse_prompt_name) ? (
+          <span
+            className="block text-xs mt-1 truncate font-mono"
+            style={{ color: '#c4b5fd' }}
+            title={cfg.langfuse_prompt_name}
+          >
+            Langfuse Prompt
+            {/* : {cfg.langfuse_prompt_name} */}
+          </span>
+        ) : <span
+            className="block text-xs mt-1 truncate font-mono"
+            style={{ color: '#c4b5fd' }}
+            title={cfg.crafter_prompt_name || 'N/A'}
+          >
+            Crafter Prompt
+            {/* : {cfg.crafter_prompt_name || 'N/A'} */}
+         </span>
+        }
       </div>
     )
   }

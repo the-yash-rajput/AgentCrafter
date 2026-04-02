@@ -1,10 +1,13 @@
 import os
 import json
-import asyncio
-import httpx
-from typing import Any, Dict, Callable, TypedDict, Optional
+from typing import Any, Callable, Optional
 from jinja2 import Template
-from datetime import datetime
+
+from base.handlers.langfuse_handler import (
+    get_langfuse_metadata,
+    langfuse_callback_handler,
+)
+from base.utilities.langchain_agent_prompt_utilities import get_prompt_with_env
 from runtime.langfuse_tracing import log_llm_generation
 from task_runner import PythonTaskConfig, PythonTaskRunner
 
@@ -55,6 +58,8 @@ def build_functional_node(
                     pass
 
             try:
+                import httpx
+
                 with httpx.Client() as client:
                     response = client.request(method, url, headers=headers, json=body)
                     response.raise_for_status()
@@ -179,7 +184,64 @@ def build_functional_node(
     return passthrough
 
 
-def build_llm_node(config: dict) -> Callable:
+def _render_template(template_value: Any, state: dict) -> str:
+    template_text = str(template_value or "")
+    try:
+        return Template(template_text).render(**state)
+    except Exception:
+        return template_text
+
+
+def _extract_langchain_content(response: Any) -> Any:
+    content = getattr(response, "content", response)
+    if isinstance(content, list):
+        chunks = []
+        for item in content:
+            if isinstance(item, str):
+                chunks.append(item)
+            elif isinstance(item, dict):
+                if item.get("type") == "text" and item.get("text"):
+                    chunks.append(item["text"])
+                else:
+                    chunks.append(json.dumps(item))
+            else:
+                chunks.append(str(item))
+        return "\n".join(chunk for chunk in chunks if chunk)
+    return content
+
+
+def _resolve_llm_system_prompt(config: dict, state: dict) -> tuple[str, dict]:
+    fallback_prompt = config.get("system_prompt", "You are a helpful assistant.")
+    prompt_name = str(config.get("langfuse_prompt_name") or "").strip()
+    use_langfuse_prompt = bool(config.get("use_langfuse_prompt")) and bool(prompt_name)
+
+    if not use_langfuse_prompt:
+        return _render_template(fallback_prompt, state), {
+            "prompt_source": "inline",
+            "prompt_name": None,
+            "prompt_label": None,
+        }
+
+    prompt_object = get_prompt_with_env(prompt_name, fallback_content=fallback_prompt)
+    prompt_content = (
+        getattr(prompt_object, "content", None)
+        if prompt_object is not None
+        else fallback_prompt
+    )
+    return _render_template(prompt_content, state), {
+        "prompt_source": getattr(prompt_object, "source", "inline") if prompt_object else "inline",
+        "prompt_name": prompt_name,
+        "prompt_label": getattr(prompt_object, "label", None) if prompt_object else None,
+    }
+
+
+def build_llm_node(
+    config: dict,
+    *,
+    agent_name: Optional[str] = None,
+    run_id: Optional[str] = None,
+    node_name: Optional[str] = None,
+) -> Callable:
     """Build an LLM call node from config."""
     provider = str(config.get("provider", "azure_openai")).strip().lower()
     model = config.get("model", "ai-agent-4o")
@@ -191,7 +253,6 @@ def build_llm_node(config: dict) -> Callable:
         "anthropic": "ANTHROPIC_API_KEY",
     }
     api_key_env = config.get("api_key_env_var") or provider_key_env_map.get(provider, "AZURE_OPENAI_API_KEY")
-    system_prompt = config.get("system_prompt", "You are a helpful assistant.")
     user_prompt_template = config.get("user_prompt_template", "{{input}}")
     temperature = config.get("temperature", 0.7)
     max_tokens = config.get("max_tokens", 1000)
@@ -213,11 +274,8 @@ def build_llm_node(config: dict) -> Callable:
         ).strip()
         azure_deployment = str(config.get("azure_deployment") or model_name).strip()
 
-        # Render prompt template
-        try:
-            user_prompt = Template(user_prompt_template).render(**state)
-        except Exception:
-            user_prompt = user_prompt_template
+        system_prompt, prompt_metadata = _resolve_llm_system_prompt(config, state)
+        user_prompt = _render_template(user_prompt_template, state)
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -271,43 +329,118 @@ def build_llm_node(config: dict) -> Callable:
             }
 
         try:
+            langfuse_handler = langfuse_callback_handler()
+            langfuse_metadata = get_langfuse_metadata(
+                session_id=run_id,
+                tags=[value for value in (agent_name, node_name, provider) if value],
+                node_name=node_name,
+                output_key=output_key,
+                prompt_name=prompt_metadata.get("prompt_name"),
+                prompt_source=prompt_metadata.get("prompt_source"),
+                prompt_label=prompt_metadata.get("prompt_label"),
+            )
+            callbacks = [langfuse_handler] if langfuse_handler is not None else []
+
             if provider in ("azure_openai", "azure", "openai"):
-                import openai
-                client = openai.AzureOpenAI(
-                    api_key=api_key,
-                    azure_endpoint=azure_endpoint,
-                    api_version=azure_api_version,
-                )
-                response = client.chat.completions.create(
-                    model=azure_deployment,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
-                content = response.choices[0].message.content
+                try:
+                    from langchain_core.messages import HumanMessage, SystemMessage
+                    from langchain_openai import AzureChatOpenAI
+
+                    llm = AzureChatOpenAI(
+                        azure_deployment=azure_deployment,
+                        api_key=api_key,
+                        azure_endpoint=azure_endpoint,
+                        api_version=azure_api_version,
+                        model=model_name or azure_deployment,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    response = llm.invoke(
+                        [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)],
+                        config={"callbacks": callbacks, "metadata": langfuse_metadata},
+                    )
+                    content = _extract_langchain_content(response)
+                except Exception:
+                    import openai
+
+                    client = openai.AzureOpenAI(
+                        api_key=api_key,
+                        azure_endpoint=azure_endpoint,
+                        api_version=azure_api_version,
+                    )
+                    response = client.chat.completions.create(
+                        model=azure_deployment,
+                        messages=messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    content = response.choices[0].message.content
+                    log_llm_generation(
+                        name=node_name or "llm_call",
+                        provider=provider,
+                        model=azure_deployment,
+                        input_payload={"messages": messages},
+                        output_payload=content,
+                        metadata={
+                            "output_key": output_key,
+                            **prompt_metadata,
+                        },
+                    )
 
             elif provider == "anthropic":
-                import anthropic
-                client = anthropic.Anthropic(api_key=api_key)
-                response = client.messages.create(
-                    model=model,
-                    max_tokens=max_tokens,
-                    system=system_prompt,
-                    messages=[{"role": "user", "content": user_prompt}],
-                )
-                content = response.content[0].text
+                try:
+                    from langchain_anthropic import ChatAnthropic
+                    from langchain_core.messages import HumanMessage, SystemMessage
+
+                    llm = ChatAnthropic(
+                        api_key=api_key,
+                        model=model_name,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    response = llm.invoke(
+                        [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)],
+                        config={"callbacks": callbacks, "metadata": langfuse_metadata},
+                    )
+                    content = _extract_langchain_content(response)
+                except Exception:
+                    import anthropic
+
+                    client = anthropic.Anthropic(api_key=api_key)
+                    response = client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_prompt,
+                        messages=[{"role": "user", "content": user_prompt}],
+                    )
+                    content = response.content[0].text
+                    log_llm_generation(
+                        name=node_name or "llm_call",
+                        provider=provider,
+                        model=model_name,
+                        input_payload={"messages": messages},
+                        output_payload=content,
+                        metadata={
+                            "output_key": output_key,
+                            **prompt_metadata,
+                        },
+                    )
 
             else:
                 content = f"[Unsupported provider: {provider}]"
 
-            log_llm_generation(
-                name="llm_call",
-                provider=provider,
-                model=azure_deployment if provider in ("azure_openai", "azure", "openai") else model_name,
-                input_payload={"messages": messages},
-                output_payload=content,
-                metadata={"output_key": output_key},
-            )
+            if provider not in ("azure_openai", "azure", "openai", "anthropic"):
+                log_llm_generation(
+                    name=node_name or "llm_call",
+                    provider=provider,
+                    model=model_name,
+                    input_payload={"messages": messages},
+                    output_payload=content,
+                    metadata={
+                        "output_key": output_key,
+                        **prompt_metadata,
+                    },
+                )
 
             if parse_json:
                 try:
@@ -319,12 +452,15 @@ def build_llm_node(config: dict) -> Callable:
 
         except Exception as e:
             log_llm_generation(
-                name="llm_call",
+                name=node_name or "llm_call",
                 provider=provider,
                 model=azure_deployment if provider in ("azure_openai", "azure", "openai") else model_name,
                 input_payload={"messages": messages},
                 error=str(e),
-                metadata={"output_key": output_key},
+                metadata={
+                    "output_key": output_key,
+                    **prompt_metadata,
+                },
             )
             return {**state, "_error": str(e), output_key: None}
 

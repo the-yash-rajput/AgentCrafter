@@ -78,7 +78,14 @@ class GraphRunner:
         trace_token = set_current_trace(trace)
 
         try:
-            graph = self._build_langgraph(agent, nodes, edges, snapshots, execution_context=execution_context)
+            graph = self._build_langgraph(
+                agent,
+                nodes,
+                edges,
+                snapshots,
+                execution_context=execution_context,
+                run_id=str(run.id),
+            )
             result = graph.invoke(current_state)
             if isinstance(result, dict):
                 current_state = result
@@ -120,6 +127,7 @@ class GraphRunner:
         edges: List[Edge],
         snapshots: list,
         execution_context: Optional[dict] = None,
+        run_id: Optional[str] = None,
     ):
         """Compile agent config into an executable LangGraph graph."""
         workflow = StateGraph(dict)
@@ -135,7 +143,12 @@ class GraphRunner:
                     execution_context=execution_context,
                 )
             elif node.type == NodeType.llm_call:
-                fn = build_llm_node(node.config or {})
+                fn = build_llm_node(
+                    node.config or {},
+                    agent_name=agent.name,
+                    run_id=run_id,
+                    node_name=node.name,
+                )
             else:
                 continue
 

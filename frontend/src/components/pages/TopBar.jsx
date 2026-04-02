@@ -16,11 +16,12 @@ export const TopBar = ({
   isRearranging = false,
 }) => {
   const navigate = useNavigate()
-  const { setAgent } = useGraphStore()
+  const { setAgent, latestRun } = useGraphStore()
   const [saving, setSaving] = useState(false)
   const [validation, setValidation] = useState(null)
   const [showMenu, setShowMenu] = useState(false)
   const hasEntryNode = Boolean(agent?.entry_node)
+  const latestRunId = latestRun?.id ?? latestRun?.run_id ?? null
 
   const handleSaveAgent = async () => {
     if (!agent) return
@@ -109,6 +110,19 @@ export const TopBar = ({
         >
           {validation.valid ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
           {validation.valid ? `${validation.node_count}n ${validation.edge_count}e` : `${validation.errors.length} errors`}
+        </div>
+      )}
+
+      {latestRunId && (
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono"
+          style={{
+            background: '#6366f122',
+            color: '#a5b4fc',
+            border: '1px solid #818cf844',
+          }}
+        >
+          Run #{latestRunId}
         </div>
       )}
 

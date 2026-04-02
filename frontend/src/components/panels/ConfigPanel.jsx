@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Trash2, Brain, Zap, ChevronDown, ChevronRight, Flag, LogOut } from 'lucide-react'
 import { useGraphStore } from '../../hooks/useGraphStore'
-import { updateNode, deleteNode, updateAgent, updateEdge, getAgents } from '../../api/client'
+import { updateNode, deleteNode, updateAgent, updateEdge, getAgents, getLangfusePrompts } from '../../api/client'
 import toast from 'react-hot-toast'
 import Editor from '@monaco-editor/react'
 
@@ -74,7 +74,10 @@ const Slider = ({ label, value, onChange, min = 0, max = 1, step = 0.1 }) => (
 const LLMNodeConfig = ({ config, onChange }) => {
   const cfg = config || {}
   const set = (key, val) => onChange({ ...cfg, [key]: val })
-  const setNested = (section, key, val) => onChange({ ...cfg, [section]: { ...(cfg[section] || {}), [key]: val } })
+  const [langfusePrompts, setLangfusePrompts] = useState([])
+  const [langfusePromptsLoading, setLangfusePromptsLoading] = useState(false)
+  const [langfusePromptSource, setLangfusePromptSource] = useState('')
+  const [langfusePromptError, setLangfusePromptError] = useState('')
   const providerDefaults = {
     azure_openai: { model: 'ai-agent-4o', api_key_env_var: 'AZURE_OPENAI_API_KEY' },
     openai: { model: 'ai-agent-4o', api_key_env_var: 'AZURE_OPENAI_API_KEY' },
@@ -83,6 +86,27 @@ const LLMNodeConfig = ({ config, onChange }) => {
   }
   const providerValue = cfg.provider === 'openai' ? 'azure_openai' : (cfg.provider || 'azure_openai')
   const modelLooksAnthropic = (cfg.model || '').toLowerCase().startsWith('claude')
+  const selectedLangfusePrompt = (cfg.langfuse_prompt_name || '').trim()
+  const langfusePromptOptions = [
+    {
+      value: '',
+      label: langfusePromptsLoading
+        ? 'Loading prompts...'
+        : langfusePrompts.length
+          ? 'Select a prompt'
+          : 'No prompts available',
+    },
+    ...langfusePrompts.map(promptName => ({
+      value: promptName,
+      label: promptName,
+    })),
+  ]
+  if (selectedLangfusePrompt && !langfusePrompts.includes(selectedLangfusePrompt)) {
+    langfusePromptOptions.push({
+      value: selectedLangfusePrompt,
+      label: `${selectedLangfusePrompt} (current)`,
+    })
+  }
   const handleProviderChange = (provider) => {
     const defaults = providerDefaults[provider] || {}
     const currentApiKeyEnv = (cfg.api_key_env_var || '').trim()
@@ -104,6 +128,43 @@ const LLMNodeConfig = ({ config, onChange }) => {
 
     onChange(next)
   }
+
+  useEffect(() => {
+    let isActive = true
+
+    const loadLangfusePrompts = async () => {
+      if (!cfg.use_langfuse_prompt) {
+        if (!isActive) return
+        setLangfusePrompts([])
+        setLangfusePromptsLoading(false)
+        setLangfusePromptSource('')
+        setLangfusePromptError('')
+        return
+      }
+
+      setLangfusePromptsLoading(true)
+      setLangfusePromptError('')
+      try {
+        const response = await getLangfusePrompts()
+        if (!isActive) return
+        setLangfusePrompts(Array.isArray(response.prompts) ? response.prompts : [])
+        setLangfusePromptSource(response.source || '')
+        setLangfusePromptError(response.error || '')
+      } catch (_error) {
+        if (!isActive) return
+        setLangfusePrompts([])
+        setLangfusePromptSource('')
+        setLangfusePromptError('Failed to load prompt list.')
+      } finally {
+        if (isActive) {
+          setLangfusePromptsLoading(false)
+        }
+      }
+    }
+
+    loadLangfusePrompts()
+    return () => { isActive = false }
+  }, [cfg.use_langfuse_prompt])
 
   return (
     <>
@@ -137,6 +198,46 @@ const LLMNodeConfig = ({ config, onChange }) => {
       </Section>
 
       <Section title="Prompts">
+        <label className="flex items-center gap-2 text-sm cursor-pointer mb-3">
+          <input
+            type="checkbox"
+            checked={cfg.use_langfuse_prompt || false}
+            onChange={e => set('use_langfuse_prompt', e.target.checked)}
+            className="accent-indigo-500"
+          />
+          <span style={{ color: 'var(--text-dim)' }}>Fetch system prompt from Langfuse</span>
+        </label>
+        {cfg.use_langfuse_prompt && (
+          <Field label="Langfuse Prompt">
+            <Select
+              value={cfg.langfuse_prompt_name || ''}
+              onChange={value => set('langfuse_prompt_name', value)}
+              options={langfusePromptOptions}
+            />
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              Backend resolves labels from `PROFILE_ENV` and `ENV_NAMESPACE`, then falls back to the inline system prompt below.
+            </p>
+            {!!langfusePromptSource && (
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                Source: {langfusePromptSource}
+              </p>
+            )}
+            {!!langfusePromptError && (
+              <p className="text-xs mt-1" style={{ color: '#f59e0b' }}>
+                {langfusePromptError}
+              </p>
+            )}
+            {!langfusePromptsLoading && langfusePrompts.length === 0 && (
+              <div className="mt-2">
+                <Input
+                  value={cfg.langfuse_prompt_name || ''}
+                  onChange={v => set('langfuse_prompt_name', v)}
+                  placeholder="Manual prompt name fallback"
+                />
+              </div>
+            )}
+          </Field>
+        )}
         <Field label="System Prompt">
           <textarea
             value={cfg.system_prompt || ''}

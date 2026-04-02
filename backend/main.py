@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from db.session import run_migrations
-from api import agents, nodes, edges, runs
+from api import agents, nodes, edges, runs, langfuse
 
 app = FastAPI(
     title="Agent Crafter API",
@@ -27,6 +27,7 @@ app.include_router(agents.router, prefix="/api")
 app.include_router(nodes.router, prefix="/api")
 app.include_router(edges.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
+app.include_router(langfuse.router, prefix="/api")
 
 
 @app.get("/health")

@@ -267,6 +267,10 @@ const GraphEditorInner = () => {
           provider: 'azure_openai',
           model: 'ai-agent-4o',
           api_key_env_var: 'AZURE_OPENAI_API_KEY',
+          use_langfuse_prompt: false,
+          langfuse_prompt_name: '',
+          system_prompt: 'You are a helpful assistant.',
+          user_prompt_template: '{{input}}',
           temperature: 0.7,
           max_tokens: 1000,
           output_key: 'llm_response'

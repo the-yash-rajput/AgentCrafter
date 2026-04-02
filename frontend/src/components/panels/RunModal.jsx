@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Play, ChevronDown, ChevronRight, CheckCircle, XCircle, Loader } from 'lucide-react'
 import { runAgent } from '../../api/client'
+import { useGraphStore } from '../../hooks/useGraphStore'
 import toast from 'react-hot-toast'
 import Editor from '@monaco-editor/react'
 
@@ -69,6 +70,8 @@ export const RunModal = ({ agent, onClose }) => {
   const [inputJson, setInputJson] = useState(JSON.stringify({}, null, 2))
   const [result, setResult] = useState(null)
   const [running, setRunning] = useState(false)
+  const { setLatestRun } = useGraphStore()
+  const displayedRunId = result?.id ?? result?.run_id ?? null
 
   const handleRun = async () => {
     let inputData = {}
@@ -103,6 +106,7 @@ export const RunModal = ({ agent, onClose }) => {
     try {
       const run = await runAgent(agent.id, inputData)
       setResult(run)
+      setLatestRun(run)
       if (run.status === 'success') toast.success('Run completed successfully!')
       else toast.error('Run failed')
     } catch (e) {
@@ -190,6 +194,11 @@ export const RunModal = ({ agent, onClose }) => {
                 {/* Status bar */}
                 <div className="flex items-center gap-3 px-5 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
                   <StatusBadge status={result.status} />
+                  {displayedRunId && (
+                    <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                      Run ID #{displayedRunId}
+                    </p>
+                  )}
                   <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
                     {(result.state_snapshots || []).length} steps
                   </p>

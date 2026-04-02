@@ -1,39 +1,13 @@
 import contextvars
-import os
 from typing import Any, Dict, Optional
 
+from base.utilities.langfuse_client_utility import LangfuseClientWrapper
 
 _current_trace: contextvars.ContextVar[Any] = contextvars.ContextVar("langfuse_current_trace", default=None)
-_langfuse_client: Any = None
-_langfuse_init_attempted = False
 
 
 def _get_langfuse_client():
-    """Lazily initialize Langfuse client from environment variables."""
-    global _langfuse_client, _langfuse_init_attempted
-
-    if _langfuse_init_attempted:
-        return _langfuse_client
-
-    _langfuse_init_attempted = True
-    public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
-    secret_key = os.getenv("LANGFUSE_SECRET_KEY", "").strip()
-    host = os.getenv("LANGFUSE_HOST", "").strip()
-
-    if not public_key or not secret_key:
-        return None
-
-    try:
-        from langfuse import Langfuse
-
-        kwargs = {"public_key": public_key, "secret_key": secret_key}
-        if host:
-            kwargs["host"] = host
-        _langfuse_client = Langfuse(**kwargs)
-    except Exception:
-        _langfuse_client = None
-
-    return _langfuse_client
+    return LangfuseClientWrapper.get_langfuse_client()
 
 
 def _to_serializable(value: Any):
@@ -65,7 +39,7 @@ def start_run_trace(agent_id: str, agent_name: str, run_id: str, input_data: dic
             name=f"agent_run:{agent_name}",
             input=_to_serializable(input_data),
             metadata=metadata,
-            session_id=agent_id,
+            session_id=run_id,
         )
     except TypeError:
         # Older SDK compatibility.

@@ -28,3 +28,6 @@ export const deleteEdge = (edgeId) => api.delete(`/edges/${edgeId}`).then(r => r
 export const runAgent = (agentId, inputData) => api.post(`/agents/${agentId}/run`, { input_data: inputData }).then(r => r.data)
 export const getRun = (runId) => api.get(`/runs/${runId}`).then(r => r.data)
 export const getRuns = (agentId) => api.get(`/agents/${agentId}/runs`).then(r => r.data)
+
+// Langfuse
+export const getLangfusePrompts = () => api.get('/langfuse/prompts').then(r => r.data)

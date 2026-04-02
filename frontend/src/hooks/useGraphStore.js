@@ -23,6 +23,7 @@ export const useGraphStore = create((set, get) => ({
   selectedEdge: null,
   isDirty: false,
   layoutUndoSnapshot: null,
+  latestRun: null,
 
   setAgent: (agent) => set({ agent: normalizeAgent(agent) }),
 
@@ -51,6 +52,7 @@ export const useGraphStore = create((set, get) => ({
       edges: rfEdges,
       isDirty: false,
       layoutUndoSnapshot: null,
+      latestRun: null,
       selectedNode: null,
       selectedEdge: null,
     })
@@ -165,5 +167,6 @@ export const useGraphStore = create((set, get) => ({
   clearSelection: () => set({ selectedNode: null, selectedEdge: null }),
   setLayoutUndoSnapshot: (snapshot) => set({ layoutUndoSnapshot: snapshot }),
   clearLayoutUndoSnapshot: () => set({ layoutUndoSnapshot: null }),
+  setLatestRun: (latestRun) => set({ latestRun }),
   markClean: () => set({ isDirty: false }),
 }))

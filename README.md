@@ -44,6 +44,7 @@ cp .env.example .env
 # - AZURE_OPENAI_API_VERSION
 # - ANTHROPIC_API_KEY (optional)
 # - LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST (optional, for tracing)
+# - LANGFUSE_PROMPT_MANAGEMENT / PROFILE_ENV / ENV_NAMESPACE (optional, for prompt fetching)
 
 # 3. Start everything
 docker-compose up --build
@@ -89,8 +90,12 @@ VITE_API_URL=http://localhost:8000 npm run dev
 ### LLM Call Node
 Calls an LLM provider with configurable prompts:
 - **Providers:** Azure OpenAI, Anthropic, Ollama
-- **Config:** model, system prompt, user prompt template (Jinja2 `{{state.key}}`), temperature, max_tokens
+- **Config:** model, system prompt, optional Langfuse prompt name, user prompt template (Jinja2 `{{state.key}}`), temperature, max_tokens
 - **Output:** writes response to a named state key
+
+Langfuse integration:
+- **Tracing:** each run still creates a graph-level Langfuse trace, and each LLM invocation now sends Langfuse callback metadata when Langfuse is configured.
+- **Prompt fetching:** if `use_langfuse_prompt` is enabled on an LLM node, the backend fetches the prompt by `langfuse_prompt_name` using `PROFILE_ENV` / `ENV_NAMESPACE` label rules, then falls back to the inline `system_prompt`.
 
 ### Functional Node
 Three subtypes:
