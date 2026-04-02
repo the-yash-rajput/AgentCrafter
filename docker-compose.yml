@@ -22,6 +22,7 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+      - "${BACKEND_DEBUGPY_PORT:-5678}:${BACKEND_DEBUGPY_PORT:-5678}"
     environment:
       DATABASE_URL: postgresql://langgraph:langgraph_secret@postgres:5733/langgraph_builder
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
@@ -33,12 +34,18 @@ services:
       LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-}
       LANGFUSE_HOST: ${LANGFUSE_HOST:-}
       SECRET_KEY: ${SECRET_KEY:-supersecretkey}
+      BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-debug}
+      BACKEND_RELOAD: ${BACKEND_RELOAD:-true}
+      BACKEND_DEBUGPY: ${BACKEND_DEBUGPY:-false}
+      BACKEND_DEBUGPY_HOST: ${BACKEND_DEBUGPY_HOST:-0.0.0.0}
+      BACKEND_DEBUGPY_PORT: ${BACKEND_DEBUGPY_PORT:-5678}
+      BACKEND_DEBUGPY_WAIT_FOR_CLIENT: ${BACKEND_DEBUGPY_WAIT_FOR_CLIENT:-false}
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./backend:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: sh /app/start-backend.sh
 
   frontend:
     build: ./frontend

@@ -52,6 +52,7 @@ docker-compose up --build
 
 # Frontend → http://localhost:3000
 # Backend API → http://localhost:8000
+# Debugger → localhost:5678 (when BACKEND_DEBUGPY=true)
 # API Docs → http://localhost:8000/docs
 ```
 
@@ -77,6 +78,22 @@ cd backend
 pip install -r requirements.txt
 # Make sure PostgreSQL is running, then:
 DATABASE_URL=postgresql://... uvicorn main:app --reload --port 8000
+```
+
+### Remote Debugging
+
+The backend supports `debugpy` inside Docker.
+
+```bash
+BACKEND_DEBUGPY=true BACKEND_DEBUGPY_WAIT_FOR_CLIENT=true BACKEND_RELOAD=false docker-compose up --build
+```
+
+Attach your debugger to `localhost:5678`.
+
+If you want the app to start immediately and allow later attach, use:
+
+```bash
+BACKEND_DEBUGPY=true BACKEND_DEBUGPY_WAIT_FOR_CLIENT=false docker-compose up --build
 ```
 
 **Frontend:**
