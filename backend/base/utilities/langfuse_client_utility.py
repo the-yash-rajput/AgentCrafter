@@ -10,6 +10,17 @@ langfuse_logger = logging.getLogger("langfuse")
 langfuse_logger.setLevel(logging.DEBUG)
 
 
+def _load_langfuse_sdk():
+    from langfuse import Langfuse
+
+    try:
+        from langfuse import get_client
+    except ImportError:
+        get_client = None
+
+    return Langfuse, get_client
+
+
 class LangfuseClientWrapper:
     __langfuse_client: Optional[Any] = None
     __langfuse_init_attempted = False
@@ -20,6 +31,7 @@ class LangfuseClientWrapper:
 
         secret_key = os.getenv("LANGFUSE_SECRET_KEY", "").strip()
         public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
+        base_url = os.getenv("LANGFUSE_BASE_URL", "").strip()
         host = os.getenv("LANGFUSE_HOST", "").strip()
 
         if not public_key or not secret_key:
@@ -28,7 +40,7 @@ class LangfuseClientWrapper:
             return None
 
         try:
-            from langfuse import Langfuse
+            Langfuse, get_client = _load_langfuse_sdk()
 
             LOGGER.info("Initializing Langfuse client.")
             kwargs = {
@@ -36,9 +48,17 @@ class LangfuseClientWrapper:
                 "public_key": public_key,
                 "environment": get_environment(),
             }
-            if host:
+            if base_url:
+                kwargs["base_url"] = base_url
+            elif host:
                 kwargs["host"] = host
-            cls.__langfuse_client = Langfuse(**kwargs)
+            client = Langfuse(**kwargs)
+
+            if callable(get_client):
+                singleton_client = get_client()
+                cls.__langfuse_client = singleton_client or client
+            else:
+                cls.__langfuse_client = client
         except Exception:
             LOGGER.exception("Failed to initialize Langfuse client")
             cls.__langfuse_client = None
@@ -59,4 +79,3 @@ class LangfuseClientWrapper:
         cls.__langfuse_client = None
         cls.__langfuse_init_attempted = False
         LOGGER.info("Langfuse client closed.")
-

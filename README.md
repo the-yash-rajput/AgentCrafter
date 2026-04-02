@@ -43,7 +43,8 @@ cp .env.example .env
 # - AZURE_OPENAI_ENDPOINT
 # - AZURE_OPENAI_API_VERSION
 # - ANTHROPIC_API_KEY (optional)
-# - LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST (optional, for tracing)
+# - LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_BASE_URL (optional, for tracing)
+# - LANGFUSE_HOST (legacy fallback, optional)
 # - LANGFUSE_PROMPT_MANAGEMENT / PROFILE_ENV / ENV_NAMESPACE (optional, for prompt fetching)
 
 # 3. Start everything
