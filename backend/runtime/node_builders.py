@@ -8,6 +8,7 @@ from base.handlers.langfuse_handler import (
     langfuse_callback_handler,
 )
 from base.utilities.langchain_agent_prompt_utilities import get_prompt_with_env
+from runtime.json_utils import JSON_RESPONSE_INSTRUCTION, parse_json_content
 from runtime.langfuse_tracing import log_llm_generation
 from task_runner import PythonTaskConfig, PythonTaskRunner
 
@@ -275,6 +276,8 @@ def build_llm_node(
         azure_deployment = str(config.get("azure_deployment") or model_name).strip()
 
         system_prompt, prompt_metadata = _resolve_llm_system_prompt(config, state)
+        if parse_json:
+            system_prompt = f"{system_prompt.rstrip()}\n\n{JSON_RESPONSE_INSTRUCTION}"
         user_prompt = _render_template(user_prompt_template, state)
 
         messages = [
@@ -346,14 +349,22 @@ def build_llm_node(
                     from langchain_core.messages import HumanMessage, SystemMessage
                     from langchain_openai import AzureChatOpenAI
 
+                    llm_kwargs = {
+                        "azure_deployment": azure_deployment,
+                        "api_key": api_key,
+                        "azure_endpoint": azure_endpoint,
+                        "api_version": azure_api_version,
+                        "model": model_name or azure_deployment,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                    }
+                    if parse_json:
+                        llm_kwargs["model_kwargs"] = {
+                            "response_format": {"type": "json_object"}
+                        }
+
                     llm = AzureChatOpenAI(
-                        azure_deployment=azure_deployment,
-                        api_key=api_key,
-                        azure_endpoint=azure_endpoint,
-                        api_version=azure_api_version,
-                        model=model_name or azure_deployment,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
+                        **llm_kwargs,
                     )
                     response = llm.invoke(
                         [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)],
@@ -368,12 +379,15 @@ def build_llm_node(
                         azure_endpoint=azure_endpoint,
                         api_version=azure_api_version,
                     )
-                    response = client.chat.completions.create(
-                        model=azure_deployment,
-                        messages=messages,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                    )
+                    completion_kwargs = {
+                        "model": azure_deployment,
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                    }
+                    if parse_json:
+                        completion_kwargs["response_format"] = {"type": "json_object"}
+                    response = client.chat.completions.create(**completion_kwargs)
                     content = response.choices[0].message.content
                     log_llm_generation(
                         name=node_name or "llm_call",
@@ -441,12 +455,10 @@ def build_llm_node(
                         **prompt_metadata,
                     },
                 )
-
+            
             if parse_json:
-                try:
-                    content = json.loads(content)
-                except Exception:
-                    pass
+                content = parse_json_content(content)
+
 
             return {**state, output_key: content}
 
