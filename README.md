@@ -85,7 +85,7 @@ DATABASE_URL=postgresql://... uvicorn main:app --reload --port 8000
 The backend supports `debugpy` inside Docker.
 
 ```bash
-BACKEND_DEBUGPY=true BACKEND_DEBUGPY_WAIT_FOR_CLIENT=true BACKEND_RELOAD=false docker-compose up --build
+BACKEND_DEBUGPY=true BACKEND_DEBUGPY_WAIT_FOR_CLIENT=true BACKEND_DEBUGPY_SUBPROCESS=false BACKEND_RELOAD=false docker-compose up --build
 ```
 
 Attach your debugger to `localhost:5678`.
@@ -93,8 +93,10 @@ Attach your debugger to `localhost:5678`.
 If you want the app to start immediately and allow later attach, use:
 
 ```bash
-BACKEND_DEBUGPY=true BACKEND_DEBUGPY_WAIT_FOR_CLIENT=false docker-compose up --build
+BACKEND_DEBUGPY=true BACKEND_DEBUGPY_WAIT_FOR_CLIENT=false BACKEND_DEBUGPY_SUBPROCESS=false docker-compose up --build
 ```
+
+`BACKEND_DEBUGPY_SUBPROCESS=false` prevents `debugpy` from tracing spawned subprocesses such as inline Python task workers. Set it to `true` only if you need to debug those child processes too.
 
 **Frontend:**
 ```bash

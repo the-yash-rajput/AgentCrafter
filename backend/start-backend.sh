@@ -11,6 +11,7 @@ DEBUGPY_ENABLED="${BACKEND_DEBUGPY:-false}"
 DEBUGPY_HOST="${BACKEND_DEBUGPY_HOST:-0.0.0.0}"
 DEBUGPY_PORT="${BACKEND_DEBUGPY_PORT:-5678}"
 DEBUGPY_WAIT="${BACKEND_DEBUGPY_WAIT_FOR_CLIENT:-false}"
+DEBUGPY_SUBPROCESS="${BACKEND_DEBUGPY_SUBPROCESS:-false}"
 
 set -- uvicorn "$APP_MODULE" --host "$HOST" --port "$PORT" --log-level "$LOG_LEVEL"
 
@@ -22,7 +23,15 @@ if [ "$DEBUGPY_ENABLED" = "true" ]; then
   echo "Starting backend with debugpy on ${DEBUGPY_HOST}:${DEBUGPY_PORT}"
 
   if [ "$DEBUGPY_WAIT" = "true" ]; then
+    if [ "$DEBUGPY_SUBPROCESS" = "false" ]; then
+      exec python -Xfrozen_modules=off -m debugpy --listen "${DEBUGPY_HOST}:${DEBUGPY_PORT}" --configure-subProcess false --wait-for-client -m "$@"
+    fi
+
     exec python -Xfrozen_modules=off -m debugpy --listen "${DEBUGPY_HOST}:${DEBUGPY_PORT}" --wait-for-client -m "$@"
+  fi
+
+  if [ "$DEBUGPY_SUBPROCESS" = "false" ]; then
+    exec python -Xfrozen_modules=off -m debugpy --listen "${DEBUGPY_HOST}:${DEBUGPY_PORT}" --configure-subProcess false -m "$@"
   fi
 
   exec python -Xfrozen_modules=off -m debugpy --listen "${DEBUGPY_HOST}:${DEBUGPY_PORT}" -m "$@"
