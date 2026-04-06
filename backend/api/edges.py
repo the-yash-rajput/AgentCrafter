@@ -37,6 +37,11 @@ def add_edge(agent_id: int, payload: EdgeCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Invalid edge payload: {exc.orig}") from exc
     db.refresh(edge)
+    
+    from api.audit_helper import record_agent_audit
+    record_agent_audit(db, agent_id, "add_edge")
+    db.commit()
+    
     return edge
 
 
@@ -68,6 +73,11 @@ def update_edge(edge_id: int, payload: EdgeUpdate, db: Session = Depends(get_db)
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Invalid edge update: {exc.orig}") from exc
     db.refresh(edge)
+    
+    from api.audit_helper import record_agent_audit
+    record_agent_audit(db, edge.agent_id, "update_edge")
+    db.commit()
+    
     return edge
 
 
@@ -76,6 +86,12 @@ def delete_edge(edge_id: int, db: Session = Depends(get_db)):
     edge = db.query(Edge).filter(Edge.id == edge_id).first()
     if not edge:
         raise HTTPException(status_code=404, detail="Edge not found")
+    agent_id = edge.agent_id
     db.delete(edge)
     db.commit()
+    
+    from api.audit_helper import record_agent_audit
+    record_agent_audit(db, agent_id, "delete_edge")
+    db.commit()
+    
     return {"message": "Edge deleted"}

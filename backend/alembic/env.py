@@ -9,7 +9,7 @@ from alembic import context
 from db.base import Base
 
 # Ensure models are imported so metadata is fully populated.
-from models import Agent, Node, Edge, Run  # noqa: F401
+from models import Agent, Node, Edge, Run, AgentAudit  # noqa: F401
 
 config = context.config
 
