@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from models import Agent, Node
 from schemas.schemas import NodeCreate, NodeDefinitionResponse, NodeUpdate
 from services.agent_exit_nodes import get_agent_exit_nodes
+from services.exceptions import NotFoundError, ValidationError
 from services.node_definition import get_node_definitions, resolve_node_definition
 
 
@@ -58,7 +58,7 @@ class NodeService:
                     update_data.get("config", node.config),
                 )
             except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
+                raise ValidationError(str(exc)) from exc
 
             update_data["type"] = resolved_type
             update_data["subtype"] = resolved_subtype
@@ -100,13 +100,13 @@ class NodeService:
     def _get_agent_or_404(self, agent_id: int) -> Agent:
         agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:
-            raise HTTPException(status_code=404, detail="Agent not found")
+            raise NotFoundError("Agent not found")
         return agent
 
     def _get_node_or_404(self, node_id: int) -> Node:
         node = self.db.query(Node).filter(Node.id == node_id).first()
         if not node:
-            raise HTTPException(status_code=404, detail="Node not found")
+            raise NotFoundError("Node not found")
         return node
 
     def _commit_or_raise(self, prefix: str) -> None:
@@ -114,4 +114,4 @@ class NodeService:
             self.db.commit()
         except IntegrityError as exc:
             self.db.rollback()
-            raise HTTPException(status_code=400, detail=f"{prefix}: {exc.orig}") from exc
+            raise ValidationError(f"{prefix}: {exc.orig}") from exc

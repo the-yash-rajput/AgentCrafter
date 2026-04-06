@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import HTTPException
 from sqlalchemy.orm import Session, load_only
 
 from models import Agent, Edge, Node, Run, RunStatus
+from services.exceptions import NotFoundError
 from services.runtime.graph_runtime.dtos import GraphFetchResult
 from type_defs import StatePayload
 
@@ -98,5 +98,5 @@ class GraphRuntimeRepository:
     def get_run_or_404(self, run_id: int) -> Run:
         run = self.db.query(Run).filter(Run.id == run_id).first()
         if not run:
-            raise HTTPException(status_code=404, detail="Run not found")
+            raise NotFoundError("Run not found")
         return run

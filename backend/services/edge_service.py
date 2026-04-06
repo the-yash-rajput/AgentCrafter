@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from models import Agent, Edge, Node
 from schemas.schemas import EdgeCreate, EdgeUpdate
 from services.agent_exit_nodes import get_agent_exit_nodes
+from services.exceptions import NotFoundError, ValidationError
 
 
 class EdgeService:
@@ -18,15 +18,11 @@ class EdgeService:
         source_node = self._get_agent_node(agent_id, payload.source_node_id)
         target_node = self._get_agent_node(agent_id, payload.target_node_id)
         if not source_node or not target_node:
-            raise HTTPException(
-                status_code=400,
-                detail="source_node_id and target_node_id must reference existing node IDs in this agent",
+            raise ValidationError(
+                "source_node_id and target_node_id must reference existing node IDs in this agent"
             )
         if source_node.name in get_agent_exit_nodes(agent):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot add outgoing edges from exit node '{source_node.name}'",
-            )
+            raise ValidationError(f"Cannot add outgoing edges from exit node '{source_node.name}'")
 
         edge = Edge(
             agent_id=agent_id,
@@ -49,17 +45,14 @@ class EdgeService:
         if "source_node_id" in update_data:
             source = self._get_agent_node(edge.agent_id, update_data["source_node_id"])
             if not source:
-                raise HTTPException(status_code=400, detail="Invalid source_node_id for this agent")
+                raise ValidationError("Invalid source_node_id for this agent")
             if agent and source.name in get_agent_exit_nodes(agent):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Cannot add outgoing edges from exit node '{source.name}'",
-                )
+                raise ValidationError(f"Cannot add outgoing edges from exit node '{source.name}'")
 
         if "target_node_id" in update_data:
             target = self._get_agent_node(edge.agent_id, update_data["target_node_id"])
             if not target:
-                raise HTTPException(status_code=400, detail="Invalid target_node_id for this agent")
+                raise ValidationError("Invalid target_node_id for this agent")
 
         for key, value in update_data.items():
             setattr(edge, key, value)
@@ -77,13 +70,13 @@ class EdgeService:
     def _get_agent_or_404(self, agent_id: int) -> Agent:
         agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:
-            raise HTTPException(status_code=404, detail="Agent not found")
+            raise NotFoundError("Agent not found")
         return agent
 
     def _get_edge_or_404(self, edge_id: int) -> Edge:
         edge = self.db.query(Edge).filter(Edge.id == edge_id).first()
         if not edge:
-            raise HTTPException(status_code=404, detail="Edge not found")
+            raise NotFoundError("Edge not found")
         return edge
 
     def _get_agent_node(self, agent_id: int, node_id: int) -> Node | None:
@@ -94,4 +87,4 @@ class EdgeService:
             self.db.commit()
         except IntegrityError as exc:
             self.db.rollback()
-            raise HTTPException(status_code=400, detail=f"{prefix}: {exc.orig}") from exc
+            raise ValidationError(f"{prefix}: {exc.orig}") from exc

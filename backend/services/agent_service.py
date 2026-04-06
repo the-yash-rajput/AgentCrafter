@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from models import Agent, AgentStatus, Edge, Node
 from schemas.schemas import AgentCreate, AgentUpdate
 from services.agent_exit_nodes import get_agent_exit_nodes, sync_exit_fields
+from services.exceptions import NotFoundError, ValidationError
 from services.node_definition import resolve_node_definition
 
 
@@ -42,7 +42,7 @@ class AgentService:
             query = query.options(selectinload(Agent.nodes), selectinload(Agent.edges))
         agent = query.filter(Agent.id == agent_id).first()
         if not agent:
-            raise HTTPException(status_code=404, detail="Agent not found")
+            raise NotFoundError("Agent not found")
         return agent
 
     def update_agent(self, agent_id: int, payload: AgentUpdate) -> Agent:
@@ -106,10 +106,7 @@ class AgentService:
             mapped_source = node_id_map.get(edge.source_node_id)
             mapped_target = node_id_map.get(edge.target_node_id)
             if mapped_source is None or mapped_target is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Failed to map edge endpoints while duplicating",
-                )
+                raise ValidationError("Failed to map edge endpoints while duplicating")
             self.db.add(
                 Edge(
                     agent_id=new_agent.id,
@@ -183,7 +180,7 @@ class AgentService:
                     node_data.get("config"),
                 )
             except ValueError as exc:
-                raise HTTPException(status_code=400, detail=f"Invalid import payload: {exc}") from exc
+                raise ValidationError(f"Invalid import payload: {exc}") from exc
 
             node = Node(agent_id=new_agent.id, **node_data)
             self.db.add(node)
@@ -214,12 +211,9 @@ class AgentService:
                 mapped_target = node_name_map.get(target_ref)
 
             if mapped_source is None or mapped_target is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Invalid import payload: unable to resolve edge endpoints "
-                        f"source={source_ref} target={target_ref}"
-                    ),
+                raise ValidationError(
+                    "Invalid import payload: unable to resolve edge endpoints "
+                    f"source={source_ref} target={target_ref}"
                 )
 
             edge_data["source_node_id"] = mapped_source
@@ -235,10 +229,7 @@ class AgentService:
         name_to_id = {name: node_id for node_id, name in node_rows}
         missing_nodes = [name for name in exit_nodes if name not in name_to_id]
         if missing_nodes:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Exit nodes do not exist: {', '.join(missing_nodes)}",
-            )
+            raise ValidationError(f"Exit nodes do not exist: {', '.join(missing_nodes)}")
 
         outgoing_node_ids = {
             source_node_id
@@ -249,14 +240,11 @@ class AgentService:
         }
         non_leaf_exit_nodes = [name for name in exit_nodes if name_to_id[name] in outgoing_node_ids]
         if non_leaf_exit_nodes:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Exit nodes must be leaf nodes: {', '.join(non_leaf_exit_nodes)}",
-            )
+            raise ValidationError(f"Exit nodes must be leaf nodes: {', '.join(non_leaf_exit_nodes)}")
 
     def _commit_or_raise(self, prefix: str) -> None:
         try:
             self.db.commit()
         except IntegrityError as exc:
             self.db.rollback()
-            raise HTTPException(status_code=400, detail=f"{prefix}: {exc.orig}") from exc
+            raise ValidationError(f"{prefix}: {exc.orig}") from exc

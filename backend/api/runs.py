@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import json
 
+from api.error_handling import translate_service_errors
 from db.session import get_db
 from models import Run, Agent
 from schemas.schemas import RunCreate, RunResponse
@@ -14,6 +15,7 @@ router = APIRouter(tags=["runs"])
 
 
 @router.post("/agents/{agent_id}/run", response_model=RunResponse)
+@translate_service_errors
 def run_agent(agent_id: int, payload: RunCreate, db: Session = Depends(get_db)):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
@@ -35,6 +37,7 @@ def run_agent(agent_id: int, payload: RunCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/agents/{agent_id}/validate")
+@translate_service_errors
 def validate_agent(agent_id: int, db: Session = Depends(get_db)):
     runner = GraphRunner(db)
     return runner.validate_graph(agent_id)
