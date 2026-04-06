@@ -15,6 +15,7 @@ export const importAgent = (data) => api.post('/agents/import', data).then(r => 
 export const validateAgent = (id) => api.get(`/agents/${id}/validate`).then(r => r.data)
 
 // Nodes
+export const getNodeDefinitions = () => api.get('/node-definitions').then(r => r.data)
 export const createNode = (agentId, data) => api.post(`/agents/${agentId}/nodes`, data).then(r => r.data)
 export const updateNode = (nodeId, data) => api.put(`/nodes/${nodeId}`, data).then(r => r.data)
 export const deleteNode = (nodeId) => api.delete(`/nodes/${nodeId}`).then(r => r.data)

@@ -16,7 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from db.base import Base
-from models.enums import NodeType
+from models.enums import NodeSubtype, NodeType
 
 
 class Node(Base):
@@ -26,6 +26,12 @@ class Node(Base):
     agent_id = Column(BigInteger, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     type = Column(SAEnum(NodeType, name="node_type"), nullable=False)
+    subtype = Column(
+        SAEnum(NodeSubtype, name="node_subtype"),
+        nullable=False,
+        default=NodeSubtype.python_inline,
+        server_default=NodeSubtype.python_inline.value,
+    )
     config = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     position_x = Column(Float, default=0.0)
     position_y = Column(Float, default=0.0)

@@ -15,6 +15,8 @@ const normalizeAgent = (agent) => {
   }
 }
 
+const isLLMBackendType = (type) => type === 'llm_call' || type === 'llm'
+
 export const useGraphStore = create((set, get) => ({
   agent: null,
   nodes: [],
@@ -31,7 +33,7 @@ export const useGraphStore = create((set, get) => ({
     const normalizedAgent = normalizeAgent(agent)
     const rfNodes = (normalizedAgent.nodes || []).map(n => ({
       id: String(n.id),
-      type: n.type === 'llm_call' ? 'llmNode' : 'functionalNode',
+      type: isLLMBackendType(n.type) ? 'llmNode' : 'functionalNode',
       position: { x: n.position_x || 0, y: n.position_y || 0 },
       data: { ...n, label: n.name },
     }))

@@ -5,9 +5,25 @@ from sqlalchemy.exc import IntegrityError
 from agent_exit_nodes import get_agent_exit_nodes
 from db.session import get_db
 from models import Node, Agent
-from schemas.schemas import NodeCreate, NodeUpdate, NodeResponse
+from node_definition import get_node_definitions, resolve_node_definition
+from schemas.schemas import NodeCreate, NodeDefinitionResponse, NodeUpdate, NodeResponse
 
 router = APIRouter(tags=["nodes"])
+
+
+@router.get("/node-definitions", response_model=list[NodeDefinitionResponse])
+def list_node_definitions() -> list[NodeDefinitionResponse]:
+    return [
+        NodeDefinitionResponse(
+            type=definition.type,
+            subtype=definition.subtype,
+            category=definition.category,
+            label=definition.label,
+            description=definition.description,
+            default_config=definition.default_config,
+        )
+        for definition in get_node_definitions()
+    ]
 
 
 @router.post("/agents/{agent_id}/nodes", response_model=NodeResponse)
@@ -20,6 +36,7 @@ def add_node(agent_id: int, payload: NodeCreate, db: Session = Depends(get_db)):
         agent_id=agent_id,
         name=payload.name,
         type=payload.type,
+        subtype=payload.subtype,
         config=payload.config or {},
         position_x=payload.position_x or 0.0,
         position_y=payload.position_y or 0.0,
@@ -41,6 +58,21 @@ def update_node(node_id: int, payload: NodeUpdate, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="Node not found")
 
     update_data = payload.model_dump(exclude_unset=True)
+    if any(key in update_data for key in ("type", "subtype", "config")):
+        incoming_subtype = update_data["subtype"] if "subtype" in update_data else None
+        try:
+            resolved_type, resolved_subtype, resolved_config = resolve_node_definition(
+                update_data.get("type", node.type),
+                incoming_subtype,
+                update_data.get("config", node.config),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        update_data["type"] = resolved_type
+        update_data["subtype"] = resolved_subtype
+        update_data["config"] = resolved_config
+
     previous_name = node.name
     for key, value in update_data.items():
         setattr(node, key, value)

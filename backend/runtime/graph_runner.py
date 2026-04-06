@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session, load_only
 from langgraph.graph import StateGraph, END
 
 from agent_exit_nodes import get_agent_exit_nodes
-from models import Agent, Node, Edge, Run, RunStatus, NodeType, EdgeType
-from runtime.node_builders import build_functional_node, build_llm_node, build_condition_router
+from models import Agent, Node, Edge, Run, RunStatus, NodeSubtype, NodeType, EdgeType
+from node_definition import resolve_node_definition
+from runtime.edge_router import build_condition_router
 from runtime.langfuse_tracing import (
     start_run_trace,
     update_run_trace,
@@ -14,6 +15,8 @@ from runtime.langfuse_tracing import (
     reset_current_trace,
     flush_langfuse,
 )
+from runtime.nodes.factory import NodeRunnerFactory
+from type_defs import ExecutionContext, StatePayload
 
 
 class GraphRunner:
@@ -21,7 +24,12 @@ class GraphRunner:
         self.db = db
         self.max_agent_call_depth = 8
 
-    def compile_and_run(self, agent_id: int, input_data: dict, execution_context: Optional[dict] = None) -> dict:
+    def compile_and_run(
+        self,
+        agent_id: int,
+        input_data: StatePayload,
+        execution_context: Optional[ExecutionContext] = None,
+    ) -> dict:
         """Fetch agent from DB, compile to LangGraph, and run it."""
         execution_context = execution_context or {}
         prior_call_stack = list(execution_context.get("call_stack") or [])
@@ -41,7 +49,7 @@ class GraphRunner:
 
         nodes = (
             self.db.query(Node)
-            .options(load_only(Node.id, Node.name, Node.type, Node.config))
+            .options(load_only(Node.id, Node.name, Node.type, Node.subtype, Node.config))
             .filter(Node.agent_id == agent_id)
             .all()
         )
@@ -131,25 +139,24 @@ class GraphRunner:
     ):
         """Compile agent config into an executable LangGraph graph."""
         workflow = StateGraph(dict)
+        node_factory = NodeRunnerFactory()
 
         node_map: Dict[str, Node] = {}
         node_id_to_name: Dict[int, str] = {}
         for node in nodes:
-            if node.type == NodeType.functional:
-                fn = build_functional_node(
-                    node.config or {},
+            try:
+                fn = node_factory.build(
+                    node_type=node.type,
+                    subtype=node.subtype,
+                    config=node.config or {},
                     db=self.db,
                     current_agent_id=agent.id,
                     execution_context=execution_context,
-                )
-            elif node.type == NodeType.llm_call:
-                fn = build_llm_node(
-                    node.config or {},
                     agent_name=agent.name,
                     run_id=run_id,
                     node_name=node.name,
                 )
-            else:
+            except ValueError:
                 continue
 
             workflow.add_node(node.name, self._wrap_node(node, fn, snapshots))
@@ -220,7 +227,7 @@ class GraphRunner:
 
     def _wrap_node(self, node: Node, fn, snapshots: list):
         """Wrap node callables to capture snapshots and fail fast on node errors."""
-        def wrapped(state: dict) -> dict:
+        def wrapped(state: StatePayload) -> StatePayload:
             before = dict(state)
             result = fn(state)
 
@@ -232,6 +239,7 @@ class GraphRunner:
                 "node_id": str(node.id),
                 "node_name": node.name,
                 "node_type": node.type.value,
+                "node_subtype": node.subtype.value,
                 "state_before": before,
                 "state_after": after,
                 "timestamp": datetime.utcnow().isoformat(),
@@ -252,7 +260,7 @@ class GraphRunner:
 
         nodes = (
             self.db.query(Node)
-            .options(load_only(Node.id, Node.name, Node.type, Node.config))
+            .options(load_only(Node.id, Node.name, Node.type, Node.subtype, Node.config))
             .filter(Node.agent_id == agent_id)
             .all()
         )
@@ -299,11 +307,19 @@ class GraphRunner:
             errors.extend([f"Exit node '{node_name}' must be a leaf node" for node_name in non_leaf_exit_nodes])
 
         for node in nodes:
-            if node.type != NodeType.functional:
+            try:
+                resolved_type, resolved_subtype, _resolved_config = resolve_node_definition(
+                    node.type,
+                    node.subtype,
+                    node.config or {},
+                )
+            except ValueError as exc:
+                errors.append(f"Node '{node.name}' is invalid: {exc}")
+                continue
+
+            if resolved_type != NodeType.functional or resolved_subtype != NodeSubtype.agent_call:
                 continue
             config = node.config or {}
-            if config.get("function_type") != "agent_call":
-                continue
             agent_cfg = config.get("agent_call", {})
             target_agent_id = agent_cfg.get("target_agent_id")
             target_agent_name = str(agent_cfg.get("target_agent_name") or "").strip()

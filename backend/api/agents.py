@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from agent_exit_nodes import get_agent_exit_nodes, sync_exit_fields
 from db.session import get_db
 from models import Agent, Node, Edge, AgentStatus
+from node_definition import resolve_node_definition
 from schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, AgentWithGraph
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -145,6 +146,7 @@ def duplicate_agent(agent_id: int, db: Session = Depends(get_db)):
             agent_id=new_agent.id,
             name=node.name,
             type=node.type,
+            subtype=node.subtype,
             config=node.config,
             position_x=node.position_x,
             position_y=node.position_y,
@@ -197,7 +199,7 @@ def export_agent(agent_id: int, db: Session = Depends(get_db)):
             "exit_nodes": exit_nodes,
         },
         "nodes": [
-            {"id": n.id, "name": n.name, "type": n.type.value, "config": n.config,
+            {"id": n.id, "name": n.name, "type": n.type.value, "subtype": n.subtype.value, "config": n.config,
              "position_x": n.position_x, "position_y": n.position_y}
             for n in agent.nodes
         ],
@@ -223,6 +225,14 @@ def import_agent(data: dict, db: Session = Depends(get_db)):
     for n in data.get("nodes", []):
         raw = dict(n)
         import_node_id = raw.pop("id", None)
+        try:
+            raw["type"], raw["subtype"], raw["config"] = resolve_node_definition(
+                raw.get("type"),
+                raw.get("subtype"),
+                raw.get("config"),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid import payload: {exc}") from exc
         node = Node(agent_id=new_agent.id, **raw)
         db.add(node)
         created_nodes.append(node)

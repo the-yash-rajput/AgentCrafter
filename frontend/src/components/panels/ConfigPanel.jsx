@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Trash2, Brain, Zap, ChevronDown, ChevronRight, Flag, LogOut } from 'lucide-react'
 import { useGraphStore } from '../../hooks/useGraphStore'
-import { updateNode, deleteNode, updateAgent, updateEdge, deleteEdge, getAgents, getLangfusePrompts } from '../../api/client'
+import { updateNode, deleteNode, updateAgent, updateEdge, deleteEdge, getAgents, getLangfusePrompts, getNodeDefinitions } from '../../api/client'
 import toast from 'react-hot-toast'
 import Editor from '@monaco-editor/react'
 
@@ -285,6 +285,7 @@ const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
   const set = (key, val) => onChange({ ...cfg, [key]: val })
   const setNested = (section, key, val) => onChange({ ...cfg, [section]: { ...(cfg[section] || {}), [key]: val } })
   const [availableAgents, setAvailableAgents] = useState([])
+  const [functionDefinitions, setFunctionDefinitions] = useState([])
 
   useEffect(() => {
     let isActive = true
@@ -302,16 +303,36 @@ const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
     return () => { isActive = false }
   }, [currentAgentId])
 
+  useEffect(() => {
+    let isActive = true
+
+    const loadNodeDefinitions = async () => {
+      try {
+        const definitions = await getNodeDefinitions()
+        if (!isActive) return
+        setFunctionDefinitions(definitions.filter(definition => definition.type === 'functional'))
+      } catch (_error) {
+        if (!isActive) return
+        setFunctionDefinitions([])
+      }
+    }
+
+    loadNodeDefinitions()
+    return () => { isActive = false }
+  }, [])
+
   return (
     <>
       <Section title="Function Type">
         <Field label="Type">
-          <Select value={cfg.function_type} onChange={v => set('function_type', v)} options={[
-            { value: 'python_inline', label: 'Python Inline' },
-            { value: 'api_call', label: 'API Call' },
-            { value: 'data_transform', label: 'Data Transform' },
-            { value: 'agent_call', label: 'Agent Call' },
-          ]} />
+          <Select
+            value={cfg.function_type}
+            onChange={v => set('function_type', v)}
+            options={functionDefinitions.map(definition => ({
+              value: definition.subtype,
+              label: definition.label,
+            }))}
+          />
         </Field>
       </Section>
 
@@ -380,24 +401,6 @@ const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
               style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
             />
           </Field>
-        </Section>
-      )}
-
-      {cfg.function_type === 'data_transform' && (
-        <Section title="Transform Operations">
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Configure transform operations as JSON:
-          </p>
-          <div className="rounded-lg overflow-hidden border mt-2" style={{ borderColor: 'var(--border2)', height: 180 }}>
-            <Editor
-              height="180px"
-              defaultLanguage="json"
-              value={JSON.stringify(cfg.data_transform?.operations || [], null, 2)}
-              onChange={v => { try { setNested('data_transform', 'operations', JSON.parse(v)) } catch(e) {} }}
-              theme="vs-dark"
-              options={{ minimap: { enabled: false }, fontSize: 12, lineNumbers: 'off' }}
-            />
-          </div>
         </Section>
       )}
 
@@ -713,8 +716,11 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
     try {
       const nodeData = selectedNode.data
       if (nodeData.id) {
-        await updateNode(nodeData.id, { name, config })
-        updateNodeData(nodeId, { name, config, label: name })
+        const nextSubtype = nodeData.type === 'functional'
+          ? (config.function_type || 'python_inline')
+          : (nodeData.subtype || 'chat')
+        await updateNode(nodeData.id, { name, config, subtype: nextSubtype })
+        updateNodeData(nodeId, { name, config, subtype: nextSubtype, label: name })
         if (name !== nodeName && agent) {
           const nextExitNodes = exitNodes.map(exitName => exitName === nodeName ? name : exitName)
           setAgent({

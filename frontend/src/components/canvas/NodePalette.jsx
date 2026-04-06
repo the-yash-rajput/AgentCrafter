@@ -1,9 +1,11 @@
-import { Brain, Globe, Code2, GitBranch, X, Boxes } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Brain, Globe, Code2, X, Boxes } from 'lucide-react'
+import { getNodeDefinitions } from '../../api/client'
 
-const PaletteItem = ({ type, icon: Icon, label, description, color, onDragStart }) => (
+const PaletteItem = ({ type, subtype, icon: Icon, label, description, color, onDragStart }) => (
   <div
     draggable
-    onDragStart={(e) => onDragStart(e, type)}
+    onDragStart={(e) => onDragStart(e, { type, subtype })}
     className="flex items-start gap-3 p-3 rounded-lg cursor-grab active:cursor-grabbing transition-all duration-150 hover:scale-[1.02]"
     style={{
       background: 'var(--surface2)',
@@ -22,9 +24,44 @@ const PaletteItem = ({ type, icon: Icon, label, description, color, onDragStart 
 )
 
 export const NodePalette = ({ onClose }) => {
-  const onDragStart = (event, nodeType) => {
-    event.dataTransfer.setData('application/reactflow', nodeType)
+  const [nodeDefinitions, setNodeDefinitions] = useState([])
+
+  useEffect(() => {
+    let isActive = true
+
+    const loadNodeDefinitions = async () => {
+      try {
+        const definitions = await getNodeDefinitions()
+        if (!isActive) return
+        setNodeDefinitions(definitions)
+      } catch (_error) {
+        if (!isActive) return
+        setNodeDefinitions([])
+      }
+    }
+
+    loadNodeDefinitions()
+    return () => { isActive = false }
+  }, [])
+
+  const onDragStart = (event, nodeDefinition) => {
+    event.dataTransfer.setData('application/reactflow', JSON.stringify(nodeDefinition))
     event.dataTransfer.effectAllowed = 'move'
+  }
+
+  const llmDefinitions = nodeDefinitions.filter(definition => definition.category === 'llm')
+  const functionalDefinitions = nodeDefinitions.filter(definition => definition.category === 'functional')
+  const iconBySubtype = {
+    chat: Brain,
+    python_inline: Code2,
+    api_call: Globe,
+    agent_call: Boxes,
+  }
+  const colorBySubtype = {
+    chat: '#7c3aed',
+    python_inline: '#0ea5e9',
+    api_call: '#10b981',
+    agent_call: '#ec4899',
   }
 
   return (
@@ -53,52 +90,36 @@ export const NodePalette = ({ onClose }) => {
           LLM Nodes
         </p>
         <div className="space-y-2 mb-5">
-          <PaletteItem
-            type="llm_call"
-            icon={Brain}
-            label="LLM Call"
-            description="Call Azure OpenAI, Anthropic, or other LLMs"
-            color="#7c3aed"
-            onDragStart={onDragStart}
-          />
+          {llmDefinitions.map(definition => (
+            <PaletteItem
+              key={`${definition.type}:${definition.subtype}`}
+              type={definition.type}
+              subtype={definition.subtype}
+              icon={iconBySubtype[definition.subtype] || Brain}
+              label={definition.label}
+              description={definition.description}
+              color={colorBySubtype[definition.subtype] || '#7c3aed'}
+              onDragStart={onDragStart}
+            />
+          ))}
         </div>
 
         <p className="text-xs font-mono uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>
           Functional Nodes
         </p>
         <div className="space-y-2">
-          <PaletteItem
-            type="python_inline"
-            icon={Code2}
-            label="Python Function"
-            description="Run inline Python code"
-            color="#0ea5e9"
-            onDragStart={onDragStart}
-          />
-          <PaletteItem
-            type="api_call"
-            icon={Globe}
-            label="API Call"
-            description="HTTP GET/POST to external APIs"
-            color="#10b981"
-            onDragStart={onDragStart}
-          />
-          <PaletteItem
-            type="data_transform"
-            icon={GitBranch}
-            label="Data Transform"
-            description="Map, filter, or reshape state"
-            color="#f59e0b"
-            onDragStart={onDragStart}
-          />
-          <PaletteItem
-            type="agent_call"
-            icon={Boxes}
-            label="Agent Call"
-            description="Hand off state to another agent in the workspace"
-            color="#ec4899"
-            onDragStart={onDragStart}
-          />
+          {functionalDefinitions.map(definition => (
+            <PaletteItem
+              key={`${definition.type}:${definition.subtype}`}
+              type={definition.type}
+              subtype={definition.subtype}
+              icon={iconBySubtype[definition.subtype] || Code2}
+              label={definition.label}
+              description={definition.description}
+              color={colorBySubtype[definition.subtype] || '#0ea5e9'}
+              onDragStart={onDragStart}
+            />
+          ))}
         </div>
       </div>
 

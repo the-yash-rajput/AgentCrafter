@@ -23,7 +23,7 @@ const StatusBadge = ({ status }) => {
 
 const SnapshotItem = ({ snapshot, index }) => {
   const [open, setOpen] = useState(false)
-  const typeColor = snapshot.node_type === 'llm_call' ? '#7c3aed' : '#0ea5e9'
+  const typeColor = (snapshot.node_type === 'llm_call' || snapshot.node_type === 'llm') ? '#7c3aed' : '#0ea5e9'
 
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border2)' }}>
@@ -38,7 +38,9 @@ const SnapshotItem = ({ snapshot, index }) => {
         </div>
         <div className="flex-1">
           <p className="text-sm font-semibold text-white">{snapshot.node_name}</p>
-          <p className="text-xs font-mono" style={{ color: typeColor }}>{snapshot.node_type}</p>
+          <p className="text-xs font-mono" style={{ color: typeColor }}>
+            {snapshot.node_subtype ? `${snapshot.node_type}/${snapshot.node_subtype}` : snapshot.node_type}
+          </p>
         </div>
         <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
           {new Date(snapshot.timestamp).toLocaleTimeString()}
