@@ -4,10 +4,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 
-from agent_exit_nodes import get_agent_exit_nodes, sync_exit_fields
+from backend.services.agent_exit_nodes import get_agent_exit_nodes, sync_exit_fields
 from db.session import get_db
 from models import Agent, Node, Edge, AgentStatus
-from node_definition import resolve_node_definition
+from backend.services.node_definition import resolve_node_definition
 from schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, AgentWithGraph
 
 router = APIRouter(prefix="/agents", tags=["agents"])

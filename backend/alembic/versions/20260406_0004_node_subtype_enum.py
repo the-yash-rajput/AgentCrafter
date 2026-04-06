@@ -33,6 +33,34 @@ def upgrade() -> None:
     op.execute(
         sa.text(
             """
+            UPDATE nodes
+            SET
+                subtype = CASE
+                    WHEN subtype = 'data_transform' THEN 'python_inline'
+                    WHEN subtype NOT IN ('python_inline', 'api_call', 'agent_call', 'chat') THEN 'python_inline'
+                    ELSE subtype
+                END,
+                config = CASE
+                    WHEN type = 'functional' THEN jsonb_set(
+                        COALESCE(config, '{}'::jsonb),
+                        '{function_type}',
+                        to_jsonb(
+                            CASE
+                                WHEN subtype = 'data_transform' THEN 'python_inline'
+                                WHEN subtype NOT IN ('python_inline', 'api_call', 'agent_call', 'chat') THEN 'python_inline'
+                                ELSE subtype
+                            END
+                        ),
+                        true
+                    )
+                    ELSE COALESCE(config, '{}'::jsonb)
+                END
+            """
+        )
+    )
+    op.execute(
+        sa.text(
+            """
             ALTER TABLE nodes
             ALTER COLUMN subtype TYPE node_subtype
             USING subtype::node_subtype

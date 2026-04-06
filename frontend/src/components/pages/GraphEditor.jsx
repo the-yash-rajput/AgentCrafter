@@ -276,9 +276,11 @@ const GraphEditorInner = () => {
     const nodeName = `node_${nodeCounter++}`
 
     const isLLM = nodeType === 'llm_call'
+    const isCommunication = nodeType === 'communication'
     const defaultConfig = {
       ...(nodeDefinition?.default_config || {}),
-      function_type: isLLM ? undefined : nodeSubtype,
+      function_type: (!isLLM && !isCommunication) ? nodeSubtype : undefined,
+      communication_type: isCommunication ? nodeSubtype : undefined,
     }
 
     try {
@@ -293,7 +295,7 @@ const GraphEditorInner = () => {
 
       addNode({
         id: String(created.id),
-        type: isLLM ? 'llmNode' : 'functionalNode',
+        type: isLLM ? 'llmNode' : (isCommunication ? 'communicationNode' : 'functionalNode'),
         position,
         data: { ...created, label: nodeName },
       })

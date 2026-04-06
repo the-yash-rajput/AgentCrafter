@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Brain, Globe, Code2, X, Boxes } from 'lucide-react'
+import { Brain, Globe, Code2, X, Boxes, RadioTower, Waypoints } from 'lucide-react'
 import { getNodeDefinitions } from '../../api/client'
 
-const PaletteItem = ({ type, subtype, icon: Icon, label, description, color, onDragStart }) => (
+const PaletteItem = ({ definition, icon: Icon, color, onDragStart }) => (
   <div
     draggable
-    onDragStart={(e) => onDragStart(e, { type, subtype })}
+    onDragStart={(e) => onDragStart(e, definition)}
     className="flex items-start gap-3 p-3 rounded-lg cursor-grab active:cursor-grabbing transition-all duration-150 hover:scale-[1.02]"
     style={{
       background: 'var(--surface2)',
@@ -17,8 +17,8 @@ const PaletteItem = ({ type, subtype, icon: Icon, label, description, color, onD
       <Icon size={16} style={{ color }} />
     </div>
     <div className="flex-1 min-w-0">
-      <p className="text-sm font-semibold text-white">{label}</p>
-      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{description}</p>
+      <p className="text-sm font-semibold text-white">{definition.label}</p>
+      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{definition.description}</p>
     </div>
   </div>
 )
@@ -33,7 +33,7 @@ export const NodePalette = ({ onClose }) => {
       try {
         const definitions = await getNodeDefinitions()
         if (!isActive) return
-        setNodeDefinitions(definitions)
+        setNodeDefinitions(definitions.filter(definition => definition.show_in_frontend !== false))
       } catch (_error) {
         if (!isActive) return
         setNodeDefinitions([])
@@ -49,20 +49,37 @@ export const NodePalette = ({ onClose }) => {
     event.dataTransfer.effectAllowed = 'move'
   }
 
-  const llmDefinitions = nodeDefinitions.filter(definition => definition.category === 'llm')
-  const functionalDefinitions = nodeDefinitions.filter(definition => definition.category === 'functional')
   const iconBySubtype = {
     chat: Brain,
     python_inline: Code2,
     api_call: Globe,
     agent_call: Boxes,
+    rabbitmq_message: RadioTower,
+    kafka: Waypoints,
+    api: Globe,
   }
   const colorBySubtype = {
     chat: '#7c3aed',
     python_inline: '#0ea5e9',
     api_call: '#10b981',
     agent_call: '#ec4899',
+    rabbitmq_message: '#f97316',
+    kafka: '#eab308',
+    api: '#14b8a6',
   }
+  const categoryLabels = {
+    llm: 'LLM Nodes',
+    functional: 'Functional Nodes',
+    communication: 'Communication Nodes',
+  }
+  const categoryOrder = ['llm', 'functional', 'communication']
+  const groupedDefinitions = categoryOrder
+    .map(category => ({
+      category,
+      label: categoryLabels[category] || category,
+      definitions: nodeDefinitions.filter(definition => definition.category === category),
+    }))
+    .filter(group => group.definitions.length > 0)
 
   return (
     <div
@@ -86,41 +103,24 @@ export const NodePalette = ({ onClose }) => {
       </div>
 
       <div className="p-3 flex-1 overflow-y-auto">
-        <p className="text-xs font-mono uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>
-          LLM Nodes
-        </p>
-        <div className="space-y-2 mb-5">
-          {llmDefinitions.map(definition => (
-            <PaletteItem
-              key={`${definition.type}:${definition.subtype}`}
-              type={definition.type}
-              subtype={definition.subtype}
-              icon={iconBySubtype[definition.subtype] || Brain}
-              label={definition.label}
-              description={definition.description}
-              color={colorBySubtype[definition.subtype] || '#7c3aed'}
-              onDragStart={onDragStart}
-            />
-          ))}
-        </div>
-
-        <p className="text-xs font-mono uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>
-          Functional Nodes
-        </p>
-        <div className="space-y-2">
-          {functionalDefinitions.map(definition => (
-            <PaletteItem
-              key={`${definition.type}:${definition.subtype}`}
-              type={definition.type}
-              subtype={definition.subtype}
-              icon={iconBySubtype[definition.subtype] || Code2}
-              label={definition.label}
-              description={definition.description}
-              color={colorBySubtype[definition.subtype] || '#0ea5e9'}
-              onDragStart={onDragStart}
-            />
-          ))}
-        </div>
+        {groupedDefinitions.map((group, index) => (
+          <div key={group.category} className={index === groupedDefinitions.length - 1 ? '' : 'mb-5'}>
+            <p className="text-xs font-mono uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>
+              {group.label}
+            </p>
+            <div className="space-y-2">
+              {group.definitions.map(definition => (
+                <PaletteItem
+                  key={`${definition.type}:${definition.subtype}`}
+                  definition={definition}
+                  icon={iconBySubtype[definition.subtype] || Code2}
+                  color={colorBySubtype[definition.subtype] || '#0ea5e9'}
+                  onDragStart={onDragStart}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>

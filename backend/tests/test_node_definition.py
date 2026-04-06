@@ -1,8 +1,8 @@
 import unittest
 
-from node_definition import get_node_definitions, normalize_node_type, resolve_node_definition
+from backend.services.node_definition import get_node_definitions, normalize_node_type, resolve_node_definition
 from models import NodeCategory, NodeSubtype, NodeType
-from runtime.nodes.factory import NodeRunnerFactory
+from backend.services.runtime.nodes.factory import NodeRunnerFactory
 
 
 class NodeDefinitionTests(unittest.TestCase):
@@ -31,13 +31,19 @@ class NodeDefinitionTests(unittest.TestCase):
         definitions = get_node_definitions()
         subtypes = {definition.subtype for definition in definitions}
         categories = {definition.category for definition in definitions}
+        visibility = {definition.subtype: definition.show_in_frontend for definition in definitions}
 
         self.assertNotIn("data_transform", {subtype.value for subtype in subtypes})
+        self.assertNotIn(NodeSubtype.api_call, subtypes)
         self.assertIn(NodeSubtype.python_inline, subtypes)
-        self.assertIn(NodeSubtype.api_call, subtypes)
         self.assertIn(NodeSubtype.agent_call, subtypes)
+        self.assertIn(NodeSubtype.api, subtypes)
+        self.assertIn(NodeSubtype.rabbitmq_message, subtypes)
+        self.assertIn(NodeSubtype.kafka, subtypes)
         self.assertIn(NodeCategory.llm, categories)
         self.assertIn(NodeCategory.functional, categories)
+        self.assertIn(NodeCategory.communication, categories)
+        self.assertTrue(all(visibility.values()))
 
     def test_node_runner_factory_builds_llm_runner(self) -> None:
         runner = NodeRunnerFactory().build(

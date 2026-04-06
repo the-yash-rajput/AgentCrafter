@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from agent_exit_nodes import get_agent_exit_nodes
+from backend.services.agent_exit_nodes import get_agent_exit_nodes
 from db.session import get_db
 from models import Node, Agent
-from node_definition import get_node_definitions, resolve_node_definition
+from backend.services.node_definition import get_node_definitions, resolve_node_definition
 from schemas.schemas import NodeCreate, NodeDefinitionResponse, NodeUpdate, NodeResponse
 
 router = APIRouter(tags=["nodes"])
@@ -20,6 +20,7 @@ def list_node_definitions() -> list[NodeDefinitionResponse]:
             category=definition.category,
             label=definition.label,
             description=definition.description,
+            show_in_frontend=definition.show_in_frontend,
             default_config=definition.default_config,
         )
         for definition in get_node_definitions()

@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, Any, List
 from datetime import datetime
 from models import AgentStatus, NodeCategory, NodeSubtype, NodeType, EdgeType, RunStatus
-from node_definition import normalize_node_subtype, normalize_node_type, resolve_node_definition
+from backend.services.node_definition import normalize_node_subtype, normalize_node_type, resolve_node_definition
 from type_defs import JSONMapping
 
 
@@ -189,6 +189,7 @@ class NodeDefinitionResponse(BaseModel):
     category: NodeCategory
     label: str
     description: str
+    show_in_frontend: bool
     default_config: JSONMapping
 
     class Config:

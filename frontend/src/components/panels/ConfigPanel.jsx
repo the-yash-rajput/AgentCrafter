@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Trash2, Brain, Zap, ChevronDown, ChevronRight, Flag, LogOut } from 'lucide-react'
+import { X, Trash2, Brain, Zap, ChevronDown, ChevronRight, Flag, LogOut, RadioTower } from 'lucide-react'
 import { useGraphStore } from '../../hooks/useGraphStore'
 import { updateNode, deleteNode, updateAgent, updateEdge, deleteEdge, getAgents, getLangfusePrompts, getNodeDefinitions } from '../../api/client'
 import toast from 'react-hot-toast'
@@ -310,7 +310,9 @@ const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
       try {
         const definitions = await getNodeDefinitions()
         if (!isActive) return
-        setFunctionDefinitions(definitions.filter(definition => definition.type === 'functional'))
+        setFunctionDefinitions(
+          definitions.filter(definition => definition.type === 'functional' && definition.show_in_frontend !== false)
+        )
       } catch (_error) {
         if (!isActive) return
         setFunctionDefinitions([])
@@ -372,35 +374,6 @@ const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
           <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
             Available helpers: <code className="text-indigo-400">json</code>, <code className="text-indigo-400">math</code>, <code className="text-indigo-400">statistics</code>, <code className="text-indigo-400">datetime</code>, <code className="text-indigo-400">timedelta</code>, <code className="text-indigo-400">uuid4</code>, <code className="text-indigo-400">re</code>. If you need print logs, return <code className="text-indigo-400">printed</code> from your function.
           </p>
-        </Section>
-      )}
-
-      {cfg.function_type === 'api_call' && (
-        <Section title="API Configuration">
-          <Field label="URL (supports {{state.key}})">
-            <Input value={cfg.api_call?.url} onChange={v => setNested('api_call', 'url', v)} placeholder="https://api.example.com/data" />
-          </Field>
-          <Field label="Method">
-            <Select value={cfg.api_call?.method || 'GET'} onChange={v => setNested('api_call', 'method', v)} options={[
-              { value: 'GET', label: 'GET' },
-              { value: 'POST', label: 'POST' },
-              { value: 'PUT', label: 'PUT' },
-              { value: 'DELETE', label: 'DELETE' },
-            ]} />
-          </Field>
-          <Field label="Output Key">
-            <Input value={cfg.api_call?.output_key} onChange={v => setNested('api_call', 'output_key', v)} placeholder="api_result" />
-          </Field>
-          <Field label="Body Template (JSON)">
-            <textarea
-              value={cfg.api_call?.body_template || ''}
-              onChange={e => setNested('api_call', 'body_template', e.target.value)}
-              rows={3}
-              placeholder='{"query": "{{question}}"}'
-              className="w-full px-3 py-2 rounded-lg text-sm font-mono outline-none resize-none"
-              style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
-            />
-          </Field>
         </Section>
       )}
 
@@ -489,6 +462,140 @@ const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
             />
             <span style={{ color: 'var(--text-dim)' }}>Attach child run metadata</span>
           </label>
+        </Section>
+      )}
+    </>
+  )
+}
+
+const CommunicationNodeConfig = ({ config, onChange }) => {
+  const cfg = config || {}
+  const set = (key, val) => onChange({ ...cfg, [key]: val })
+  const setNested = (section, key, val) => onChange({ ...cfg, [section]: { ...(cfg[section] || {}), [key]: val } })
+  const [communicationDefinitions, setCommunicationDefinitions] = useState([])
+
+  useEffect(() => {
+    let isActive = true
+
+    const loadNodeDefinitions = async () => {
+      try {
+        const definitions = await getNodeDefinitions()
+        if (!isActive) return
+        setCommunicationDefinitions(
+          definitions.filter(definition => definition.type === 'communication' && definition.show_in_frontend !== false)
+        )
+      } catch (_error) {
+        if (!isActive) return
+        setCommunicationDefinitions([])
+      }
+    }
+
+    loadNodeDefinitions()
+    return () => { isActive = false }
+  }, [])
+
+  return (
+    <>
+      <Section title="Communication Type">
+        <Field label="Type">
+          <Select
+            value={cfg.communication_type}
+            onChange={v => set('communication_type', v)}
+            options={communicationDefinitions.map(definition => ({
+              value: definition.subtype,
+              label: definition.label,
+            }))}
+          />
+        </Field>
+      </Section>
+
+      {(cfg.communication_type === 'rabbitmq_message' || !cfg.communication_type) && (
+        <Section title="RabbitMQ">
+          <Field label="Host">
+            <Input value={cfg.rabbitmq_message?.host} onChange={v => setNested('rabbitmq_message', 'host', v)} placeholder="localhost" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Port">
+              <Input type="number" value={cfg.rabbitmq_message?.port ?? 5672} onChange={v => setNested('rabbitmq_message', 'port', v === '' ? '' : parseInt(v, 10))} placeholder="5672" />
+            </Field>
+            <Field label="Queue">
+              <Input value={cfg.rabbitmq_message?.queue} onChange={v => setNested('rabbitmq_message', 'queue', v)} placeholder="events.queue" />
+            </Field>
+          </div>
+          <Field label="Exchange">
+            <Input value={cfg.rabbitmq_message?.exchange} onChange={v => setNested('rabbitmq_message', 'exchange', v)} placeholder="events.exchange" />
+          </Field>
+          <Field label="Routing Key">
+            <Input value={cfg.rabbitmq_message?.routing_key} onChange={v => setNested('rabbitmq_message', 'routing_key', v)} placeholder="events.created" />
+          </Field>
+          <Field label="Output Key">
+            <Input value={cfg.rabbitmq_message?.output_key} onChange={v => setNested('rabbitmq_message', 'output_key', v)} placeholder="rabbitmq_result" />
+          </Field>
+          <Field label="Payload Template (JSON)">
+            <textarea
+              value={cfg.rabbitmq_message?.payload_template || ''}
+              onChange={e => setNested('rabbitmq_message', 'payload_template', e.target.value)}
+              rows={4}
+              placeholder='{"event":"created","input":{{input | tojson}}}'
+              className="w-full px-3 py-2 rounded-lg text-sm font-mono outline-none resize-none"
+              style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+            />
+          </Field>
+        </Section>
+      )}
+
+      {cfg.communication_type === 'kafka' && (
+        <Section title="Kafka">
+          <Field label="Bootstrap Servers">
+            <Input value={cfg.kafka?.bootstrap_servers} onChange={v => setNested('kafka', 'bootstrap_servers', v)} placeholder="localhost:9092" />
+          </Field>
+          <Field label="Topic">
+            <Input value={cfg.kafka?.topic} onChange={v => setNested('kafka', 'topic', v)} placeholder="events.topic" />
+          </Field>
+          <Field label="Key Template">
+            <Input value={cfg.kafka?.key_template} onChange={v => setNested('kafka', 'key_template', v)} placeholder="{{user_id}}" />
+          </Field>
+          <Field label="Output Key">
+            <Input value={cfg.kafka?.output_key} onChange={v => setNested('kafka', 'output_key', v)} placeholder="kafka_result" />
+          </Field>
+          <Field label="Payload Template (JSON)">
+            <textarea
+              value={cfg.kafka?.payload_template || ''}
+              onChange={e => setNested('kafka', 'payload_template', e.target.value)}
+              rows={4}
+              placeholder='{"event":"created","input":{{input | tojson}}}'
+              className="w-full px-3 py-2 rounded-lg text-sm font-mono outline-none resize-none"
+              style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+            />
+          </Field>
+        </Section>
+      )}
+
+      {cfg.communication_type === 'api' && (
+        <Section title="Communication API">
+          <Field label="URL (supports {{state.key}})">
+            <Input value={cfg.api?.url} onChange={v => setNested('api', 'url', v)} placeholder="https://hooks.example.com/events" />
+          </Field>
+          <Field label="Method">
+            <Select value={cfg.api?.method || 'POST'} onChange={v => setNested('api', 'method', v)} options={[
+              { value: 'POST', label: 'POST' },
+              { value: 'PUT', label: 'PUT' },
+              { value: 'PATCH', label: 'PATCH' },
+            ]} />
+          </Field>
+          <Field label="Output Key">
+            <Input value={cfg.api?.output_key} onChange={v => setNested('api', 'output_key', v)} placeholder="api_result" />
+          </Field>
+          <Field label="Body Template (JSON)">
+            <textarea
+              value={cfg.api?.body_template || ''}
+              onChange={e => setNested('api', 'body_template', e.target.value)}
+              rows={4}
+              placeholder='{"message":{{input | tojson}}}'
+              className="w-full px-3 py-2 rounded-lg text-sm font-mono outline-none resize-none"
+              style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+            />
+          </Field>
         </Section>
       )}
     </>
@@ -705,6 +812,7 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
   }
 
   const isLLM = selectedNode.type === 'llmNode'
+  const isCommunication = selectedNode.type === 'communicationNode'
   const nodeId = selectedNode.id
   const nodeName = selectedNode.data?.name || selectedNode.id
   const exitNodes = agent?.exit_nodes || []
@@ -718,6 +826,8 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
       if (nodeData.id) {
         const nextSubtype = nodeData.type === 'functional'
           ? (config.function_type || 'python_inline')
+          : nodeData.type === 'communication'
+            ? (config.communication_type || 'rabbitmq_message')
           : (nodeData.subtype || 'chat')
         await updateNode(nodeData.id, { name, config, subtype: nextSubtype })
         updateNodeData(nodeId, { name, config, subtype: nextSubtype, label: name })
@@ -776,12 +886,12 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg" style={{ background: isLLM ? '#7c3aed22' : '#0ea5e922' }}>
-            {isLLM ? <Brain size={14} style={{ color: '#7c3aed' }} /> : <Zap size={14} style={{ color: '#0ea5e9' }} />}
+          <div className="p-1.5 rounded-lg" style={{ background: isLLM ? '#7c3aed22' : (isCommunication ? '#f9731622' : '#0ea5e922') }}>
+            {isLLM ? <Brain size={14} style={{ color: '#7c3aed' }} /> : (isCommunication ? <RadioTower size={14} style={{ color: '#f97316' }} /> : <Zap size={14} style={{ color: '#0ea5e9' }} />)}
           </div>
           <div>
-            <p className="text-xs font-mono uppercase tracking-widest" style={{ color: isLLM ? '#a78bfa' : '#38bdf8' }}>
-              {isLLM ? 'LLM Node' : 'Functional Node'}
+            <p className="text-xs font-mono uppercase tracking-widest" style={{ color: isLLM ? '#a78bfa' : (isCommunication ? '#fdba74' : '#38bdf8') }}>
+              {isLLM ? 'LLM Node' : (isCommunication ? 'Communication Node' : 'Functional Node')}
             </p>
             <input
               value={name}
@@ -835,7 +945,9 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
       <div className="flex-1 overflow-y-auto">
         {isLLM
           ? <LLMNodeConfig config={config} onChange={setConfig} />
-          : <FunctionalNodeConfig config={config} onChange={setConfig} currentAgentId={agent?.id} />
+          : isCommunication
+            ? <CommunicationNodeConfig config={config} onChange={setConfig} />
+            : <FunctionalNodeConfig config={config} onChange={setConfig} currentAgentId={agent?.id} />
         }
       </div>
 

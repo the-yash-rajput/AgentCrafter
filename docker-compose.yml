@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_USER: langgraph
       POSTGRES_PASSWORD: langgraph_secret
-      POSTGRES_DB: langgraph_builder
+      POSTGRES_DB: langgraph_builder_1
     ports:
       - "${POSTGRES_HOST_PORT:-5733}:5733"
     volumes:

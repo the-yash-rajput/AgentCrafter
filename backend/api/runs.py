@@ -8,7 +8,7 @@ import json
 from db.session import get_db
 from models import Run, Agent
 from schemas.schemas import RunCreate, RunResponse
-from runtime.graph_runner import GraphRunner
+from backend.services.runtime.graph_runner import GraphRunner
 
 router = APIRouter(tags=["runs"])
 

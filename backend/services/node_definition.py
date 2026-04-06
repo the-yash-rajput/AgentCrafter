@@ -10,24 +10,31 @@ from type_defs import JSONMapping
 
 FUNCTIONAL_NODE_SUBTYPES = {
     NodeSubtype.python_inline,
-    NodeSubtype.api_call,
     NodeSubtype.agent_call,
 }
 LLM_NODE_SUBTYPES = {
     NodeSubtype.chat,
 }
+COMMUNICATION_NODE_SUBTYPES = {
+    NodeSubtype.rabbitmq_message,
+    NodeSubtype.kafka,
+    NodeSubtype.api,
+}
 DEFAULT_NODE_SUBTYPE_BY_TYPE = {
     NodeType.functional: NodeSubtype.python_inline,
     NodeType.llm_call: NodeSubtype.chat,
+    NodeType.communication: NodeSubtype.rabbitmq_message,
 }
 NODE_TYPE_ALIASES = {
     "functional": NodeType.functional,
     "llm": NodeType.llm_call,
     "llm_call": NodeType.llm_call,
+    "communication": NodeType.communication,
 }
 NODE_SUBTYPES_BY_TYPE = {
     NodeType.functional: FUNCTIONAL_NODE_SUBTYPES,
     NodeType.llm_call: LLM_NODE_SUBTYPES,
+    NodeType.communication: COMMUNICATION_NODE_SUBTYPES,
 }
 
 
@@ -38,6 +45,7 @@ class NodeDefinitionSpec:
     category: NodeCategory
     label: str
     description: str
+    show_in_frontend: bool
     default_config: JSONMapping
 
 
@@ -63,14 +71,37 @@ def _build_default_functional_config(subtype: NodeSubtype) -> JSONMapping:
         },
         "agent_call": _build_agent_call_default_config(),
     }
-    if subtype == NodeSubtype.api_call:
-        config["api_call"] = {
+    return config
+
+
+def _build_default_communication_config(subtype: NodeSubtype) -> JSONMapping:
+    config: JSONMapping = {
+        "node_type": NodeType.communication.value,
+        "communication_type": subtype.value,
+        "rabbitmq_message": {
+            "host": "localhost",
+            "port": 5672,
+            "exchange": "",
+            "routing_key": "",
+            "queue": "",
+            "payload_template": "{\"input\": {{input | tojson}}}",
+            "output_key": "rabbitmq_result",
+        },
+        "kafka": {
+            "bootstrap_servers": "localhost:9092",
+            "topic": "",
+            "key_template": "",
+            "payload_template": "{\"input\": {{input | tojson}}}",
+            "output_key": "kafka_result",
+        },
+        "api": {
             "url": "",
-            "method": "GET",
+            "method": "POST",
             "headers": {},
-            "body_template": "",
+            "body_template": "{\"input\": {{input | tojson}}}",
             "output_key": "api_result",
-        }
+        },
+    }
     return config
 
 
@@ -81,6 +112,7 @@ NODE_DEFINITIONS = (
         category=NodeCategory.llm,
         label="LLM Call",
         description="Call Azure OpenAI, Anthropic, or other LLMs",
+        show_in_frontend=True,
         default_config={
             "node_type": NodeType.llm_call.value,
             "provider": "azure_openai",
@@ -101,15 +133,8 @@ NODE_DEFINITIONS = (
         category=NodeCategory.functional,
         label="Python Function",
         description="Run inline Python code",
+        show_in_frontend=True,
         default_config=_build_default_functional_config(NodeSubtype.python_inline),
-    ),
-    NodeDefinitionSpec(
-        type=NodeType.functional,
-        subtype=NodeSubtype.api_call,
-        category=NodeCategory.functional,
-        label="API Call",
-        description="HTTP GET/POST to external APIs",
-        default_config=_build_default_functional_config(NodeSubtype.api_call),
     ),
     NodeDefinitionSpec(
         type=NodeType.functional,
@@ -117,7 +142,35 @@ NODE_DEFINITIONS = (
         category=NodeCategory.functional,
         label="Agent Call",
         description="Hand off state to another agent in the workspace",
+        show_in_frontend=True,
         default_config=_build_default_functional_config(NodeSubtype.agent_call),
+    ),
+    NodeDefinitionSpec(
+        type=NodeType.communication,
+        subtype=NodeSubtype.rabbitmq_message,
+        category=NodeCategory.communication,
+        label="RabbitMQ Message",
+        description="Publish a message to RabbitMQ",
+        show_in_frontend=True,
+        default_config=_build_default_communication_config(NodeSubtype.rabbitmq_message),
+    ),
+    NodeDefinitionSpec(
+        type=NodeType.communication,
+        subtype=NodeSubtype.kafka,
+        category=NodeCategory.communication,
+        label="Kafka",
+        description="Publish a message to Kafka",
+        show_in_frontend=False,
+        default_config=_build_default_communication_config(NodeSubtype.kafka),
+    ),
+    NodeDefinitionSpec(
+        type=NodeType.communication,
+        subtype=NodeSubtype.api,
+        category=NodeCategory.communication,
+        label="API",
+        description="Send a communication request to an HTTP endpoint",
+        show_in_frontend=True,
+        default_config=_build_default_communication_config(NodeSubtype.api),
     ),
 )
 
@@ -153,7 +206,23 @@ def resolve_node_definition(
     if not normalized_subtype:
         if normalized_type == NodeType.functional:
             normalized_subtype = normalize_node_subtype(normalized_config.get("function_type"))
+        elif normalized_type == NodeType.communication:
+            normalized_subtype = normalize_node_subtype(normalized_config.get("communication_type"))
         normalized_subtype = normalized_subtype or DEFAULT_NODE_SUBTYPE_BY_TYPE[normalized_type]
+
+    if normalized_type == NodeType.functional and normalized_subtype == NodeSubtype.api_call:
+        normalized_type = NodeType.communication
+        normalized_subtype = NodeSubtype.api
+        normalized_config = {
+            **normalized_config,
+            "node_type": NodeType.communication.value,
+            "communication_type": NodeSubtype.api.value,
+            "api": deepcopy(
+                normalized_config.get("api")
+                or normalized_config.get("api_call")
+                or _build_default_communication_config(NodeSubtype.api).get("api", {})
+            ),
+        }
 
     supported_subtypes = NODE_SUBTYPES_BY_TYPE.get(normalized_type, set())
     if normalized_subtype not in supported_subtypes:
@@ -163,6 +232,8 @@ def resolve_node_definition(
 
     if normalized_type == NodeType.functional:
         normalized_config["function_type"] = normalized_subtype.value
+    if normalized_type == NodeType.communication:
+        normalized_config["communication_type"] = normalized_subtype.value
 
     return normalized_type, normalized_subtype, normalized_config
 
@@ -176,6 +247,7 @@ def get_node_definitions() -> list[NodeDefinitionSpec]:
             category=definition.category,
             label=definition.label,
             description=definition.description,
+            show_in_frontend=definition.show_in_frontend,
             default_config=deepcopy(definition.default_config),
         ))
     return definitions
