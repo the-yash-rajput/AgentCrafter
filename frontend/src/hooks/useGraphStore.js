@@ -158,6 +158,7 @@ export const useGraphStore = create((set, get) => ({
   removeEdge: (edgeId) => {
     set(state => ({
       edges: state.edges.filter(e => e.id !== edgeId),
+      selectedEdge: state.selectedEdge?.id === edgeId ? null : state.selectedEdge,
       isDirty: true,
     }))
   },

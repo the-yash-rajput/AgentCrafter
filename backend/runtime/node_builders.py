@@ -224,15 +224,21 @@ def _resolve_llm_system_prompt(config: dict, state: dict) -> tuple[str, dict]:
         }
 
     prompt_object = get_prompt_with_env(prompt_name, fallback_content=fallback_prompt)
-    prompt_content = (
-        getattr(prompt_object, "content", None)
-        if prompt_object is not None
-        else fallback_prompt
-    )
-    return _render_template(prompt_content, state), {
-        "prompt_source": getattr(prompt_object, "source", "inline") if prompt_object else "inline",
-        "prompt_name": prompt_name,
-        "prompt_label": getattr(prompt_object, "label", None) if prompt_object else None,
+    prompt_content = str(getattr(prompt_object, "content", "") or "").strip()
+    prompt_source = getattr(prompt_object, "source", "inline") if prompt_object else "inline"
+    prompt_label = getattr(prompt_object, "label", None) if prompt_object else None
+
+    if prompt_source == "langfuse" and prompt_content:
+        return _render_template(prompt_content, state), {
+            "prompt_source": "langfuse",
+            "prompt_name": prompt_name,
+            "prompt_label": prompt_label,
+        }
+
+    return _render_template(fallback_prompt, state), {
+        "prompt_source": "inline",
+        "prompt_name": None,
+        "prompt_label": None,
     }
 
 

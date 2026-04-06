@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Trash2, Brain, Zap, ChevronDown, ChevronRight, Flag, LogOut } from 'lucide-react'
 import { useGraphStore } from '../../hooks/useGraphStore'
-import { updateNode, deleteNode, updateAgent, updateEdge, getAgents, getLangfusePrompts } from '../../api/client'
+import { updateNode, deleteNode, updateAgent, updateEdge, deleteEdge, getAgents, getLangfusePrompts } from '../../api/client'
 import toast from 'react-hot-toast'
 import Editor from '@monaco-editor/react'
 
@@ -495,11 +495,12 @@ const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
 // ─── Edge Config Panel ─────────────────────────────────────────────────────────
 
 const EdgeConfigPanel = ({ edge, onClose }) => {
-  const { nodes, updateEdgeData } = useGraphStore()
+  const { nodes, updateEdgeData, removeEdge } = useGraphStore()
   const [config, setConfig] = useState(edge.data?.condition_config || {})
   const [label, setLabel] = useState(edge.data?.label || '')
   const [edgeType, setEdgeType] = useState(edge.data?.edge_type || 'direct')
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const sourceName = nodes.find(n => n.id === String(edge.source))?.data?.name || edge.source
   const targetName = nodes.find(n => n.id === String(edge.target))?.data?.name || edge.target
 
@@ -521,6 +522,19 @@ const EdgeConfigPanel = ({ edge, onClose }) => {
     setSaving(false)
   }
 
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await deleteEdge(edge.id)
+      removeEdge(edge.id)
+      onClose()
+      toast.success('Edge deleted')
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to delete edge')
+    }
+    setDeleting(false)
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
@@ -528,7 +542,17 @@ const EdgeConfigPanel = ({ edge, onClose }) => {
           <p className="text-xs font-mono uppercase tracking-widest" style={{ color: '#f59e0b' }}>Edge Config</p>
           <p className="text-sm font-semibold text-white mt-0.5">{sourceName} → {targetName}</p>
         </div>
-        <button onClick={onClose}><X size={16} style={{ color: 'var(--text-muted)' }} /></button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleDelete}
+            disabled={deleting || saving}
+            className="p-1.5 rounded hover:bg-red-900/30 transition-colors disabled:opacity-50"
+            title="Delete edge"
+          >
+            <Trash2 size={14} style={{ color: '#ef4444' }} />
+          </button>
+          <button onClick={onClose}><X size={16} style={{ color: 'var(--text-muted)' }} /></button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -600,12 +624,20 @@ const EdgeConfigPanel = ({ edge, onClose }) => {
         )}
       </div>
 
-      <div className="p-4 border-t" style={{ borderColor: 'var(--border)' }}>
+      <div className="p-4 border-t flex gap-3" style={{ borderColor: 'var(--border)' }}>
+        <button
+          onClick={handleDelete}
+          disabled={deleting || saving}
+          className="px-4 py-2 rounded-lg text-sm font-semibold transition-opacity disabled:opacity-50"
+          style={{ background: '#7f1d1d', color: '#fecaca' }}
+        >
+          {deleting ? 'Deleting...' : 'Delete Edge'}
+        </button>
         <button
           onClick={handleSave}
-          disabled={saving}
-          className="w-full py-2 rounded-lg text-sm font-semibold transition-opacity"
-          style={{ background: '#f59e0b', color: '#000', opacity: saving ? 0.6 : 1 }}
+          disabled={saving || deleting}
+          className="flex-1 py-2 rounded-lg text-sm font-semibold transition-opacity"
+          style={{ background: '#f59e0b', color: '#000', opacity: saving || deleting ? 0.6 : 1 }}
         >
           {saving ? 'Saving...' : 'Save Edge'}
         </button>

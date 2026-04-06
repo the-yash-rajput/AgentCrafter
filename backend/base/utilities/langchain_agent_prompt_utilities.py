@@ -19,8 +19,8 @@ class PromptObject:
 
 
 def _is_langfuse_prompt_management_enabled() -> bool:
-    value = os.getenv("LANGFUSE_PROMPT_MANAGEMENT", "false").strip().lower()
-    return value in {"1", "true", "yes", "on"}
+    value = os.getenv("LANGFUSE_PROMPT_MANAGEMENT", "true").strip().lower()
+    return value in {"1", "true", "yes"}
 
 
 def get_langfuse_prompt_object_with_env(prompt_path: str):
