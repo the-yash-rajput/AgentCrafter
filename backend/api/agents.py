@@ -4,10 +4,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 
-from backend.services.agent_exit_nodes import get_agent_exit_nodes, sync_exit_fields
+from services.agent_exit_nodes import get_agent_exit_nodes, sync_exit_fields
 from db.session import get_db
 from models import Agent, Node, Edge, AgentStatus
-from backend.services.node_definition import resolve_node_definition
+from services.node_definition import resolve_node_definition
 from schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, AgentWithGraph
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -23,7 +23,6 @@ def create_agent(payload: AgentCreate, db: Session = Depends(get_db)):
         output_schema=payload_data.get("output_schema") or {},
         state_schema=payload_data.get("state_schema") or {},
         entry_node=payload_data.get("entry_node"),
-        exit_node=payload_data.get("exit_node"),
         exit_nodes=payload_data.get("exit_nodes") or [],
         metadata_=payload_data.get("metadata_") or {},
     )
@@ -64,7 +63,7 @@ def update_agent(agent_id: int, payload: AgentUpdate, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail="Agent not found")
     
     update_data = payload.model_dump(exclude_unset=True)
-    if "exit_node" in update_data or "exit_nodes" in update_data:
+    if "exit_nodes" in update_data:
         sync_exit_fields(update_data)
         node_rows = (
             db.query(Node.id, Node.name)
@@ -133,7 +132,6 @@ def duplicate_agent(agent_id: int, db: Session = Depends(get_db)):
         output_schema=agent.output_schema,
         state_schema=agent.state_schema,
         entry_node=agent.entry_node,
-        exit_node=(exit_nodes[0] if exit_nodes else None),
         exit_nodes=exit_nodes,
         metadata_=agent.metadata_,
     )
@@ -195,7 +193,6 @@ def export_agent(agent_id: int, db: Session = Depends(get_db)):
             "output_schema": agent.output_schema,
             "state_schema": agent.state_schema,
             "entry_node": agent.entry_node,
-            "exit_node": (exit_nodes[0] if exit_nodes else None),
             "exit_nodes": exit_nodes,
         },
         "nodes": [

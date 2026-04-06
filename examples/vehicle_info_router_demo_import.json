@@ -49,7 +49,9 @@
       }
     },
     "entry_node": "prepare_vehicle_request",
-    "exit_node": "final_output"
+    "exit_nodes": [
+      "final_output"
+    ]
   },
   "nodes": [
     {

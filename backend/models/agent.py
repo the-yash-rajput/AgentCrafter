@@ -28,7 +28,6 @@ class Agent(Base):
     output_schema = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     state_schema = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     entry_node = Column(String(255), nullable=True)
-    exit_node = Column(String(255), nullable=True)
     exit_nodes = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
     metadata_ = Column("metadata", JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

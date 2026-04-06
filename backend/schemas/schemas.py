@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, Any, List
 from datetime import datetime
 from models import AgentStatus, NodeCategory, NodeSubtype, NodeType, EdgeType, RunStatus
-from backend.services.node_definition import normalize_node_subtype, normalize_node_type, resolve_node_definition
+from services.node_definition import normalize_node_subtype, normalize_node_type, resolve_node_definition
 from type_defs import JSONMapping
 
 
@@ -15,7 +15,6 @@ class AgentCreate(BaseModel):
     output_schema: JSONMapping = Field(default_factory=dict)
     state_schema: JSONMapping = Field(default_factory=dict)
     entry_node: Optional[str] = None
-    exit_node: Optional[str] = None
     exit_nodes: List[str] = Field(default_factory=list)
     metadata_: JSONMapping = Field(default_factory=dict, alias="metadata")
 
@@ -31,7 +30,6 @@ class AgentUpdate(BaseModel):
     output_schema: Optional[JSONMapping] = None
     state_schema: Optional[JSONMapping] = None
     entry_node: Optional[str] = None
-    exit_node: Optional[str] = None
     exit_nodes: Optional[List[str]] = None
     metadata_: Optional[JSONMapping] = Field(default=None, alias="metadata")
 
@@ -48,7 +46,6 @@ class AgentResponse(BaseModel):
     output_schema: JSONMapping
     state_schema: JSONMapping
     entry_node: Optional[str]
-    exit_node: Optional[str]
     exit_nodes: List[str] = Field(default_factory=list)
     metadata: JSONMapping = Field(default_factory=dict, alias="metadata_")
     created_at: datetime

@@ -5,13 +5,12 @@ const normalizeAgent = (agent) => {
   if (!agent) return agent
   const rawExitNodes = Array.isArray(agent.exit_nodes)
     ? agent.exit_nodes.filter(name => typeof name === 'string' && name.trim())
-    : (agent.exit_node ? [agent.exit_node] : [])
+    : []
   const exitNodes = [...new Set(rawExitNodes)]
 
   return {
     ...agent,
     exit_nodes: exitNodes,
-    exit_node: exitNodes[0] || null,
   }
 }
 
@@ -100,7 +99,6 @@ export const useGraphStore = create((set, get) => ({
           ...state.agent,
           entry_node: state.agent.entry_node === removedName ? null : state.agent.entry_node,
           exit_nodes: exitNodes,
-          exit_node: exitNodes[0] || null,
         } : state.agent,
         nodes: state.nodes.filter(n => n.id !== nodeId),
         edges: state.edges.filter(e => e.source !== nodeId && e.target !== nodeId),

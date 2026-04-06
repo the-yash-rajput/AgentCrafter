@@ -39,7 +39,7 @@ def build_agent_call_node(
             return {**state, "_error": str(exc)}
 
         from models import Agent
-        from backend.services.runtime.graph_runner import GraphRunner
+        from services.runtime.graph_runner import GraphRunner
 
         target_agent = None
         if target_agent_id not in (None, ""):

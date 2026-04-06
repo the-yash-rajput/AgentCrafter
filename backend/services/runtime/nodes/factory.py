@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from backend.services.node_definition import resolve_node_definition
+from services.node_definition import resolve_node_definition
 from models import NodeSubtype, NodeType
 from type_defs import ExecutionContext, JSONMapping, NodeRunner
 
@@ -28,7 +28,7 @@ class NodeRunnerFactory:
         )
 
         if resolved_type == NodeType.functional:
-            from backend.services.runtime.nodes.types.functional import build_functional_node
+            from services.runtime.nodes.types.functional import build_functional_node
 
             return build_functional_node(
                 resolved_subtype,
@@ -39,7 +39,7 @@ class NodeRunnerFactory:
             )
 
         if resolved_type == NodeType.llm_call:
-            from backend.services.runtime.nodes.types.llm import build_llm_node
+            from services.runtime.nodes.types.llm import build_llm_node
 
             return build_llm_node(
                 resolved_subtype,
@@ -50,7 +50,7 @@ class NodeRunnerFactory:
             )
 
         if resolved_type == NodeType.communication:
-            from backend.services.runtime.nodes.types.communication import build_communication_node
+            from services.runtime.nodes.types.communication import build_communication_node
 
             return build_communication_node(
                 resolved_subtype,

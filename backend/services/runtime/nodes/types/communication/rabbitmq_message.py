@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from type_defs import JSONMapping, NodeRunner, StatePayload
-from backend.services.runtime.nodes.types.communication.common import no_op_transport_result, parse_template_payload
+from services.runtime.nodes.types.communication.common import no_op_transport_result, parse_template_payload
 
 
 def build_rabbitmq_message_node(config: JSONMapping) -> NodeRunner:

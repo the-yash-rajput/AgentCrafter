@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from type_defs import JSONMapping, NodeRunner, StatePayload
-from backend.services.runtime.nodes.types.communication.common import no_op_transport_result, parse_template_payload, render_template
+from services.runtime.nodes.types.communication.common import no_op_transport_result, parse_template_payload, render_template
 
 
 def build_kafka_node(config: JSONMapping) -> NodeRunner:

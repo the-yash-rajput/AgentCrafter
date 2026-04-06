@@ -15,12 +15,12 @@ def build_functional_node(
     execution_context: Optional[ExecutionContext] = None,
 ) -> NodeRunner:
     if subtype == NodeSubtype.python_inline:
-        from backend.services.runtime.nodes.types.functional.python_inline import build_python_inline_node
+        from services.runtime.nodes.types.functional.python_inline import build_python_inline_node
 
         return build_python_inline_node(config)
 
     if subtype == NodeSubtype.agent_call:
-        from backend.services.runtime.nodes.types.functional.agent_call import build_agent_call_node
+        from services.runtime.nodes.types.functional.agent_call import build_agent_call_node
 
         return build_agent_call_node(
             config,

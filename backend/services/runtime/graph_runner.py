@@ -4,18 +4,18 @@ from datetime import datetime
 from sqlalchemy.orm import Session, load_only
 from langgraph.graph import StateGraph, END
 
-from backend.services.agent_exit_nodes import get_agent_exit_nodes
+from services.agent_exit_nodes import get_agent_exit_nodes
 from models import Agent, Node, Edge, Run, RunStatus, NodeSubtype, NodeType, EdgeType
-from backend.services.node_definition import resolve_node_definition
-from backend.services.runtime.edge_router import build_condition_router
-from backend.services.runtime.langfuse_tracing import (
+from services.node_definition import resolve_node_definition
+from services.runtime.edge_router import build_condition_router
+from services.runtime.langfuse_tracing import (
     start_run_trace,
     update_run_trace,
     set_current_trace,
     reset_current_trace,
     flush_langfuse,
 )
-from backend.services.runtime.nodes.factory import NodeRunnerFactory
+from services.runtime.nodes.factory import NodeRunnerFactory
 from type_defs import ExecutionContext, StatePayload
 
 
@@ -213,8 +213,8 @@ class GraphRunner:
         if non_leaf_exit_nodes:
             raise ValueError(f"Exit nodes must be leaf nodes: {', '.join(non_leaf_exit_nodes)}")
 
-        for exit_node in valid_exit_nodes:
-            workflow.set_finish_point(exit_node)
+        for finish_node_name in valid_exit_nodes:
+            workflow.set_finish_point(finish_node_name)
 
         for node_name in node_map:
             if edges_by_source.get(node_name):

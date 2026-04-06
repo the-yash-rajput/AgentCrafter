@@ -16,7 +16,7 @@ def build_llm_node(
     if subtype != NodeSubtype.chat:
         raise ValueError(f"Unsupported llm node subtype '{subtype}'")
 
-    from backend.services.runtime.nodes.types.llm.chat import build_chat_llm_node
+    from services.runtime.nodes.types.llm.chat import build_chat_llm_node
 
     return build_chat_llm_node(
         config,

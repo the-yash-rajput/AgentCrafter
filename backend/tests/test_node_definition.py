@@ -1,8 +1,8 @@
 import unittest
 
-from backend.services.node_definition import get_node_definitions, normalize_node_type, resolve_node_definition
+from services.node_definition import get_node_definitions, normalize_node_type, resolve_node_definition
 from models import NodeCategory, NodeSubtype, NodeType
-from backend.services.runtime.nodes.factory import NodeRunnerFactory
+from services.runtime.nodes.factory import NodeRunnerFactory
 
 
 class NodeDefinitionTests(unittest.TestCase):
@@ -43,7 +43,9 @@ class NodeDefinitionTests(unittest.TestCase):
         self.assertIn(NodeCategory.llm, categories)
         self.assertIn(NodeCategory.functional, categories)
         self.assertIn(NodeCategory.communication, categories)
-        self.assertTrue(all(visibility.values()))
+        self.assertTrue(all(isinstance(is_visible, bool) for is_visible in visibility.values()))
+        self.assertFalse(visibility[NodeSubtype.kafka])
+        self.assertTrue(visibility[NodeSubtype.api])
 
     def test_node_runner_factory_builds_llm_runner(self) -> None:
         runner = NodeRunnerFactory().build(

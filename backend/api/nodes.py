@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from backend.services.agent_exit_nodes import get_agent_exit_nodes
+from services.agent_exit_nodes import get_agent_exit_nodes
 from db.session import get_db
 from models import Node, Agent
-from backend.services.node_definition import get_node_definitions, resolve_node_definition
+from services.node_definition import get_node_definitions, resolve_node_definition
 from schemas.schemas import NodeCreate, NodeDefinitionResponse, NodeUpdate, NodeResponse
 
 router = APIRouter(tags=["nodes"])
@@ -89,7 +89,6 @@ def update_node(node_id: int, payload: NodeUpdate, db: Session = Depends(get_db)
                 for exit_name in get_agent_exit_nodes(agent)
             ]
             agent.exit_nodes = exit_nodes
-            agent.exit_node = exit_nodes[0] if exit_nodes else None
 
     try:
         db.commit()
@@ -112,7 +111,6 @@ def delete_node(node_id: int, db: Session = Depends(get_db)):
             agent.entry_node = None
         exit_nodes = [exit_name for exit_name in get_agent_exit_nodes(agent) if exit_name != node.name]
         agent.exit_nodes = exit_nodes
-        agent.exit_node = exit_nodes[0] if exit_nodes else None
 
     db.delete(node)
     db.commit()

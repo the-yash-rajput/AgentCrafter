@@ -837,7 +837,6 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
             ...agent,
             entry_node: agent.entry_node === nodeName ? name : agent.entry_node,
             exit_nodes: nextExitNodes,
-            exit_node: nextExitNodes[0] || null,
           })
         }
         toast.success('Node saved')

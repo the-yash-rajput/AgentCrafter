@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from backend.services.agent_exit_nodes import get_agent_exit_nodes
+from services.agent_exit_nodes import get_agent_exit_nodes
 from db.session import get_db
 from models import Edge, Agent, Node
 from schemas.schemas import EdgeCreate, EdgeUpdate, EdgeResponse
