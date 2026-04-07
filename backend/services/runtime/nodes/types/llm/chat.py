@@ -11,6 +11,11 @@ from base.handlers.langfuse_handler import (
     langfuse_callback_handler,
 )
 from base.utilities.langchain_agent_prompt_utilities import get_prompt_with_env
+from services.session_history import (
+    CONVERSATION_HISTORY_KEY,
+    SESSION_ID_KEY,
+    normalize_conversation_history,
+)
 from services.runtime.json_utils import JSON_RESPONSE_INSTRUCTION, parse_json_content
 from services.runtime.langfuse_tracing import log_llm_generation
 from type_defs import JSONMapping, NodeRunner, StatePayload
@@ -40,6 +45,32 @@ def _extract_langchain_content(response: Any) -> Any:
                 chunks.append(str(item))
         return "\n".join(chunk for chunk in chunks if chunk)
     return content
+
+
+def _build_chat_messages(system_prompt: str, user_prompt: str, state: StatePayload) -> list[dict[str, str]]:
+    history_messages = normalize_conversation_history(state.get(CONVERSATION_HISTORY_KEY))
+    return [
+        {"role": "system", "content": system_prompt},
+        *history_messages,
+        {"role": "user", "content": user_prompt},
+    ]
+
+
+def _build_langchain_messages(messages: list[dict[str, str]]) -> list[Any]:
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+    langchain_messages: list[Any] = []
+    for message in messages:
+        role = message["role"]
+        content = message["content"]
+        if role == "system":
+            langchain_messages.append(SystemMessage(content=content))
+        elif role == "assistant":
+            langchain_messages.append(AIMessage(content=content))
+        else:
+            langchain_messages.append(HumanMessage(content=content))
+
+    return langchain_messages
 
 
 def _resolve_llm_system_prompt(config: JSONMapping, state: StatePayload) -> tuple[str, JSONMapping]:
@@ -114,11 +145,7 @@ def build_chat_llm_node(
         if parse_json:
             system_prompt = f"{system_prompt.rstrip()}\n\n{JSON_RESPONSE_INSTRUCTION}"
         user_prompt = _render_template(user_prompt_template, state)
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        messages = _build_chat_messages(system_prompt, user_prompt, state)
 
         if provider in ("azure_openai", "azure", "openai", "anthropic") and not api_key:
             error_msg = (
@@ -157,9 +184,10 @@ def build_chat_llm_node(
             return {**state, "_error": error_msg, output_key: None}
 
         try:
+            langfuse_session_id = str(state.get(SESSION_ID_KEY) or run_id or "").strip() or None
             langfuse_handler = langfuse_callback_handler()
             langfuse_metadata = get_langfuse_metadata(
-                session_id=run_id,
+                session_id=langfuse_session_id,
                 tags=[value for value in (agent_name, node_name, provider) if value],
                 node_name=node_name,
                 output_key=output_key,
@@ -171,7 +199,6 @@ def build_chat_llm_node(
 
             if provider in ("azure_openai", "azure", "openai"):
                 try:
-                    from langchain_core.messages import HumanMessage, SystemMessage
                     from langchain_openai import AzureChatOpenAI
 
                     llm_kwargs = {
@@ -190,7 +217,7 @@ def build_chat_llm_node(
 
                     llm = AzureChatOpenAI(**llm_kwargs)
                     response = llm.invoke(
-                        [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)],
+                        _build_langchain_messages(messages),
                         config={"callbacks": callbacks, "metadata": langfuse_metadata},
                     )
                     content = _extract_langchain_content(response)
@@ -227,7 +254,6 @@ def build_chat_llm_node(
             elif provider == "anthropic":
                 try:
                     from langchain_anthropic import ChatAnthropic
-                    from langchain_core.messages import HumanMessage, SystemMessage
 
                     llm = ChatAnthropic(
                         api_key=api_key,
@@ -236,7 +262,7 @@ def build_chat_llm_node(
                         max_tokens=max_tokens,
                     )
                     response = llm.invoke(
-                        [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)],
+                        _build_langchain_messages(messages),
                         config={"callbacks": callbacks, "metadata": langfuse_metadata},
                     )
                     content = _extract_langchain_content(response)
@@ -248,7 +274,11 @@ def build_chat_llm_node(
                         model=model,
                         max_tokens=max_tokens,
                         system=system_prompt,
-                        messages=[{"role": "user", "content": user_prompt}],
+                        messages=[
+                            message
+                            for message in messages
+                            if message["role"] in {"user", "assistant"}
+                        ],
                     )
                     content = response.content[0].text
                     log_llm_generation(

@@ -4,11 +4,19 @@ from sqlalchemy.orm import Session
 
 from models import Agent, Run
 from schemas.schemas import RunCreate
+from services.session_history import (
+    CONVERSATION_HISTORY_KEY,
+    SESSION_ID_KEY,
+    flatten_conversation_history,
+    normalize_session_id,
+)
 from services.exceptions import NotFoundError, ServiceError, ValidationError
 from services.runtime.graph_runner import GraphRunner
 
 
 class RunService:
+    session_history_limit = 20
+
     def __init__(self, db: Session):
         self.db = db
 
@@ -20,8 +28,26 @@ class RunService:
         if not validation["valid"]:
             raise ValidationError({"errors": validation["errors"]})
 
+        session_id = normalize_session_id(payload.session_id)
+        conversation_history = self._get_session_conversation(agent_id, session_id)
+        runtime_input = dict(payload.input_data or {})
+        execution_context = {
+            SESSION_ID_KEY: session_id,
+            CONVERSATION_HISTORY_KEY: conversation_history,
+        }
+        if session_id:
+            runtime_input[SESSION_ID_KEY] = session_id
+            runtime_input[CONVERSATION_HISTORY_KEY] = conversation_history
+
         try:
-            result = runner.compile_and_run(agent_id, payload.input_data)
+            result = runner.compile_and_run(
+                agent_id,
+                runtime_input,
+                execution_context=execution_context,
+                persisted_input_data=payload.input_data,
+                session_id=session_id,
+                conversation_history=conversation_history,
+            )
         except ServiceError:
             raise
         except Exception as exc:
@@ -57,3 +83,17 @@ class RunService:
         if not agent:
             raise NotFoundError("Agent not found")
         return agent
+
+    def _get_session_conversation(self, agent_id: int, session_id: str | None) -> list[dict[str, str]]:
+        if not session_id:
+            return []
+
+        prior_runs = (
+            self.db.query(Run)
+            .filter(Run.agent_id == agent_id, Run.session_id == session_id)
+            .order_by(Run.started_at.desc(), Run.id.desc())
+            .limit(self.session_history_limit)
+            .all()
+        )
+        prior_runs.reverse()
+        return flatten_conversation_history(prior_runs)

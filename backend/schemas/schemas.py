@@ -163,14 +163,27 @@ class EdgeResponse(BaseModel):
 
 class RunCreate(BaseModel):
     input_data: JSONMapping = Field(default_factory=dict)
+    session_id: Optional[str] = None
+
+    @field_validator("session_id")
+    @classmethod
+    def normalize_session_id(cls, value):
+        if value is None:
+            return None
+
+        normalized = str(value).strip()
+        return normalized or None
 
 
 class RunResponse(BaseModel):
     id: int
     agent_id: int
+    session_id: Optional[str]
     status: RunStatus
     input_data: JSONMapping
     output_data: JSONMapping
+    conversation_history: Any
+    conversation_turn: Any
     state_snapshots: Any
     error: Optional[str]
     started_at: datetime

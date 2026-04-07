@@ -19,6 +19,7 @@ class LangGraphTraceService:
             agent_name=graph_data.agent.name,
             run_id=str(run.id),
             input_data=dict(input_data or {}),
+            session_id=run.session_id or str(run.id),
         )
         token = set_current_trace(trace)
         return TraceSession(trace=trace, token=token)

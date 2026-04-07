@@ -2,6 +2,14 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from services.session_history import (
+    CONVERSATION_HISTORY_KEY,
+    SESSION_ID_KEY,
+    build_conversation_turn,
+    normalize_conversation_history,
+    normalize_session_id,
+    strip_session_fields,
+)
 from services.runtime.graph_runtime.builder import LangGraphBuilder
 from services.runtime.graph_runtime.dtos import GraphExecutionRequest
 from services.runtime.graph_runtime.executor import LangGraphExecutor
@@ -25,19 +33,52 @@ class GraphRunner:
         self,
         agent_id: int,
         input_data: StatePayload,
+        *,
         execution_context: Optional[ExecutionContext] = None,
+        persisted_input_data: Optional[StatePayload] = None,
+        session_id: Optional[str] = None,
+        conversation_history: Optional[list[dict[str, str]]] = None,
     ) -> dict:
+        base_execution_context = dict(execution_context or {})
+        resolved_session_id = normalize_session_id(
+            session_id if session_id is not None else base_execution_context.get(SESSION_ID_KEY)
+        )
+        resolved_conversation_history = normalize_conversation_history(
+            conversation_history
+            if conversation_history is not None
+            else base_execution_context.get(CONVERSATION_HISTORY_KEY)
+        )
+
+        runtime_input = strip_session_fields(input_data)
+        if resolved_session_id:
+            runtime_input[SESSION_ID_KEY] = resolved_session_id
+            runtime_input[CONVERSATION_HISTORY_KEY] = list(resolved_conversation_history)
+
         request = GraphExecutionRequest(
             agent_id=agent_id,
-            input_data=dict(input_data or {}),
-            execution_context=execution_context or {},
+            input_data=runtime_input,
+            persisted_input_data=strip_session_fields(
+                persisted_input_data if persisted_input_data is not None else input_data
+            ),
+            session_id=resolved_session_id,
+            conversation_history=list(resolved_conversation_history),
+            execution_context={
+                **base_execution_context,
+                SESSION_ID_KEY: resolved_session_id,
+                CONVERSATION_HISTORY_KEY: list(resolved_conversation_history),
+            },
         ).with_agent_call_stack(max_depth=self.max_agent_call_depth)
 
         graph_data = self.repository.fetch_for_execution(request.agent_id)
         if not graph_data.nodes:
             raise ValueError("Agent has no nodes configured")
 
-        run = self.repository.create_run(request.agent_id, request.input_data)
+        run = self.repository.create_run(
+            request.agent_id,
+            request.persisted_input_data,
+            session_id=request.session_id,
+            conversation_history=request.conversation_history,
+        )
         snapshots: list[dict] = []
         current_state = dict(request.input_data or {})
         trace_session = self.trace_service.start(graph_data, run, current_state)
@@ -58,12 +99,34 @@ class GraphRunner:
                 snapshots=snapshots,
             )
             current_state = result.output
-            self.repository.mark_run_success(run, current_state, snapshots)
+            persisted_output = strip_session_fields(current_state)
+            self.repository.mark_run_success(
+                run,
+                persisted_output,
+                snapshots,
+                conversation_turn=build_conversation_turn(
+                    request.persisted_input_data,
+                    agent_output=persisted_output,
+                ),
+            )
             self.trace_service.mark_success(trace_session, current_state)
-            return result.to_dict()
+            return {
+                **result.to_dict(),
+                "output": persisted_output,
+            }
 
         except Exception as e:
-            self.repository.mark_run_failed(run, str(e), snapshots)
+            persisted_output = strip_session_fields(current_state)
+            self.repository.mark_run_failed(
+                run,
+                str(e),
+                snapshots,
+                conversation_turn=build_conversation_turn(
+                    request.persisted_input_data,
+                    agent_output=persisted_output,
+                    error=str(e),
+                ),
+            )
             self.trace_service.mark_failure(trace_session, current_state, str(e))
             raise
         finally:

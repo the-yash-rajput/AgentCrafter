@@ -26,7 +26,7 @@ export const updateEdge = (edgeId, data) => api.put(`/edges/${edgeId}`, data).th
 export const deleteEdge = (edgeId) => api.delete(`/edges/${edgeId}`).then(r => r.data)
 
 // Runs
-export const runAgent = (agentId, inputData) => api.post(`/agents/${agentId}/run`, { input_data: inputData }).then(r => r.data)
+export const runAgent = (agentId, payload) => api.post(`/agents/${agentId}/run`, payload).then(r => r.data)
 export const getRun = (runId) => api.get(`/runs/${runId}`).then(r => r.data)
 export const getRuns = (agentId) => api.get(`/agents/${agentId}/runs`).then(r => r.data)
 

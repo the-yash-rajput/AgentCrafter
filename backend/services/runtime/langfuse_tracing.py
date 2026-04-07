@@ -22,7 +22,14 @@ def _to_serializable(value: Any):
     return str(value)
 
 
-def start_run_trace(agent_id: str, agent_name: str, run_id: str, input_data: dict):
+def start_run_trace(
+    agent_id: str,
+    agent_name: str,
+    run_id: str,
+    input_data: dict,
+    *,
+    session_id: str | None = None,
+):
     """Create a Langfuse trace for a graph run. Returns trace object or None."""
     client = _get_langfuse_client()
     if client is None:
@@ -39,7 +46,7 @@ def start_run_trace(agent_id: str, agent_name: str, run_id: str, input_data: dic
             name=f"agent_run:{agent_name}",
             input=_to_serializable(input_data),
             metadata=metadata,
-            session_id=run_id,
+            session_id=session_id or run_id,
         )
     except TypeError:
         # Older SDK compatibility.
