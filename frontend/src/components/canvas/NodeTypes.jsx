@@ -1,5 +1,5 @@
 import { Handle, Position } from 'reactflow'
-import { Brain, Boxes, Code2, Globe, GitBranch, Zap } from 'lucide-react'
+import { Brain, Boxes, Code2, Globe, RadioTower, Waypoints, Zap } from 'lucide-react'
 import { useGraphStore } from '../../hooks/useGraphStore'
 
 const NodeBase = ({ id, data, type, icon: Icon, color, glowClass, headerLabel }) => {
@@ -28,7 +28,7 @@ const NodeBase = ({ id, data, type, icon: Icon, color, glowClass, headerLabel })
       >
         <Icon size={13} style={{ color }} />
         <span className="text-xs font-mono font-semibold uppercase tracking-widest" style={{ color }}>
-          {headerLabel || (type === 'llmNode' ? 'LLM Call' : 'Functional')}
+          {headerLabel || (type === 'llmNode' ? 'LLM Call' : 'Node')}
         </span>
         {isEntry && (
           <span className="ml-auto text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--success)', color: '#fff', fontSize: '9px' }}>
@@ -85,10 +85,19 @@ const NodeMeta = ({ data, type }) => {
       </div>
     )
   }
+  if (type === 'communicationNode') {
+    return (
+      <div className="flex items-center gap-1.5 mt-1">
+        <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: '#f9731633', color: '#fdba74' }}>
+          {data.subtype || cfg.communication_type || 'rabbitmq_message'}
+        </span>
+      </div>
+    )
+  }
   return (
     <div className="flex items-center gap-1.5 mt-1">
       <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: '#0ea5e933', color: '#38bdf8' }}>
-        {cfg.function_type || 'python_inline'}
+        {data.subtype || cfg.function_type || 'python_inline'}
       </span>
     </div>
   )
@@ -100,13 +109,16 @@ export const LLMNode = (props) => (
 
 const FUNCTION_VISUALS = {
   python_inline: { icon: Code2, color: '#0ea5e9', label: 'Python Fn' },
-  api_call: { icon: Globe, color: '#10b981', label: 'API Call' },
-  data_transform: { icon: GitBranch, color: '#f59e0b', label: 'Transform' },
   agent_call: { icon: Boxes, color: '#ec4899', label: 'Agent Call' },
+}
+const COMMUNICATION_VISUALS = {
+  rabbitmq_message: { icon: RadioTower, color: '#f97316', label: 'RabbitMQ' },
+  kafka: { icon: Waypoints, color: '#eab308', label: 'Kafka' },
+  api: { icon: Globe, color: '#14b8a6', label: 'Comm API' },
 }
 
 export const FunctionalNode = (props) => {
-  const fnType = props?.data?.config?.function_type || 'python_inline'
+  const fnType = props?.data?.subtype || props?.data?.config?.function_type || 'python_inline'
   const visual = FUNCTION_VISUALS[fnType] || { icon: Zap, color: '#0ea5e9', label: 'Functional' }
 
   return (
@@ -121,7 +133,24 @@ export const FunctionalNode = (props) => {
   )
 }
 
+export const CommunicationNode = (props) => {
+  const subtype = props?.data?.subtype || props?.data?.config?.communication_type || 'rabbitmq_message'
+  const visual = COMMUNICATION_VISUALS[subtype] || { icon: RadioTower, color: '#f97316', label: 'Communication' }
+
+  return (
+    <NodeBase
+      {...props}
+      type="communicationNode"
+      icon={visual.icon}
+      color={visual.color}
+      glowClass="node-functional"
+      headerLabel={visual.label}
+    />
+  )
+}
+
 export const nodeTypes = {
   llmNode: LLMNode,
   functionalNode: FunctionalNode,
+  communicationNode: CommunicationNode,
 }

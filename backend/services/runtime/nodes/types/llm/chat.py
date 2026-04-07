@@ -1,6 +1,9 @@
-import os
+from __future__ import annotations
+
 import json
-from typing import Any, Callable, Optional
+import os
+from typing import Any, Optional
+
 from jinja2 import Template
 
 from base.handlers.langfuse_handler import (
@@ -8,184 +11,12 @@ from base.handlers.langfuse_handler import (
     langfuse_callback_handler,
 )
 from base.utilities.langchain_agent_prompt_utilities import get_prompt_with_env
-from runtime.json_utils import JSON_RESPONSE_INSTRUCTION, parse_json_content
-from runtime.langfuse_tracing import log_llm_generation
-from task_runner import PythonTaskConfig, PythonTaskRunner
-
-# ─── Node Builders ────────────────────────────────────────────────────────────
-
-def build_functional_node(
-    config: dict,
-    *,
-    db=None,
-    current_agent_id: Optional[int] = None,
-    execution_context: Optional[dict] = None,
-) -> Callable:
-    """Build a functional node from config."""
-    function_type = config.get("function_type", "python_inline")
-
-    if function_type == "python_inline":
-        inline_config = config.get("python_inline", {})
-        code = inline_config.get("code", "def run(state):\n    return state")
-        task_runner = PythonTaskRunner()
-        task_config = PythonTaskConfig.from_inline_config(inline_config)
-
-        def functional_node(state: dict) -> dict:
-            try:
-                result = task_runner.run(code=code, state=state, config=task_config)
-                return result.output
-            except Exception as e:
-                return {**state, "_error": str(e)}
-
-        return functional_node
-
-    elif function_type == "api_call":
-        api_cfg = config.get("api_call", {})
-        
-        def api_node(state: dict) -> dict:
-            url_template = Template(api_cfg.get("url", ""))
-            url = url_template.render(**state)
-            method = api_cfg.get("method", "GET").upper()
-            headers = api_cfg.get("headers", {})
-            body_template_str = api_cfg.get("body_template", "")
-            output_key = api_cfg.get("output_key", "api_result")
-
-            body = None
-            if body_template_str:
-                body = Template(body_template_str).render(**state)
-                try:
-                    body = json.loads(body)
-                except Exception:
-                    pass
-
-            try:
-                import httpx
-
-                with httpx.Client() as client:
-                    response = client.request(method, url, headers=headers, json=body)
-                    response.raise_for_status()
-                    return {**state, output_key: response.json()}
-            except Exception as e:
-                return {**state, "_error": str(e)}
-
-        return api_node
-
-    elif function_type == "data_transform":
-        operations = config.get("data_transform", {}).get("operations", [])
-        
-        def transform_node(state: dict) -> dict:
-            result = dict(state)
-            for op in operations:
-                op_type = op.get("type")
-                op_config = op.get("config", {})
-                if op_type == "extract":
-                    key = op_config.get("key")
-                    new_key = op_config.get("new_key", key)
-                    if key and key in result:
-                        result[new_key] = result[key]
-                elif op_type == "merge":
-                    result.update(op_config.get("data", {}))
-            return result
-
-        return transform_node
-
-    elif function_type == "agent_call":
-        agent_cfg = config.get("agent_call", {})
-
-        def agent_call_node(state: dict) -> dict:
-            target_agent_id = agent_cfg.get("target_agent_id")
-            target_agent_name = str(agent_cfg.get("target_agent_name") or "").strip()
-            input_mode = agent_cfg.get("input_mode", "entire_state")
-            input_key = str(agent_cfg.get("input_key") or "").strip()
-            input_template = str(agent_cfg.get("input_template") or "").strip()
-            output_mode = agent_cfg.get("output_mode", "merge_state")
-            output_key = str(agent_cfg.get("output_key") or "agent_result").strip() or "agent_result"
-            include_run_metadata = bool(agent_cfg.get("include_run_metadata", False))
-
-            if db is None:
-                return {**state, "_error": "Agent Call nodes require a database session"}
-
-            from models import Agent
-            from runtime.graph_runner import GraphRunner
-
-            target_agent = None
-            if target_agent_id not in (None, ""):
-                try:
-                    target_agent = db.query(Agent).filter(Agent.id == int(target_agent_id)).first()
-                except (TypeError, ValueError):
-                    return {**state, "_error": f"Invalid target agent ID '{target_agent_id}'"}
-            elif target_agent_name:
-                target_agent = db.query(Agent).filter(Agent.name == target_agent_name).first()
-            else:
-                return {**state, "_error": "Agent Call node requires target_agent_id or target_agent_name"}
-
-            if not target_agent:
-                target_label = target_agent_name or target_agent_id
-                return {**state, "_error": f"Target agent '{target_label}' not found"}
-
-            if current_agent_id is not None and target_agent.id == current_agent_id:
-                return {**state, "_error": "Agent Call node cannot target the same agent"}
-
-            nested_input: Any
-            if input_mode == "state_key":
-                if not input_key:
-                    return {**state, "_error": "Agent Call node requires input_key for state_key mode"}
-                nested_input = state.get(input_key, {})
-            elif input_mode == "template":
-                if not input_template:
-                    return {**state, "_error": "Agent Call node requires input_template for template mode"}
-                try:
-                    rendered = Template(input_template).render(**state)
-                    nested_input = json.loads(rendered)
-                except Exception as e:
-                    return {**state, "_error": f"Failed to render agent input template: {e}"}
-            else:
-                nested_input = dict(state)
-
-            if not isinstance(nested_input, dict):
-                return {**state, "_error": "Agent Call node input must resolve to a JSON object"}
-
-            try:
-                result = GraphRunner(db).compile_and_run(
-                    target_agent.id,
-                    nested_input,
-                    execution_context=execution_context,
-                )
-            except Exception as e:
-                return {**state, "_error": str(e)}
-
-            child_output = result.get("output", {})
-            if not isinstance(child_output, dict):
-                child_output = {output_key: child_output}
-
-            next_state: dict[str, Any]
-            if output_mode == "write_to_key":
-                next_state = {**state, output_key: child_output}
-            else:
-                next_state = child_output
-
-            if include_run_metadata:
-                next_state = {
-                    **next_state,
-                    f"{output_key}_meta": {
-                        "target_agent_id": target_agent.id,
-                        "target_agent_name": target_agent.name,
-                        "run_id": result.get("run_id"),
-                        "status": result.get("status"),
-                    },
-                }
-
-            return next_state
-
-        return agent_call_node
-
-    # Default passthrough
-    def passthrough(state: dict) -> dict:
-        return state
-    return passthrough
+from services.runtime.json_utils import JSON_RESPONSE_INSTRUCTION, parse_json_content
+from services.runtime.langfuse_tracing import log_llm_generation
+from type_defs import JSONMapping, NodeRunner, StatePayload
 
 
-def _render_template(template_value: Any, state: dict) -> str:
+def _render_template(template_value: Any, state: StatePayload) -> str:
     template_text = str(template_value or "")
     try:
         return Template(template_text).render(**state)
@@ -211,7 +42,7 @@ def _extract_langchain_content(response: Any) -> Any:
     return content
 
 
-def _resolve_llm_system_prompt(config: dict, state: dict) -> tuple[str, dict]:
+def _resolve_llm_system_prompt(config: JSONMapping, state: StatePayload) -> tuple[str, JSONMapping]:
     fallback_prompt = config.get("system_prompt", "You are a helpful assistant.")
     prompt_name = str(config.get("langfuse_prompt_name") or "").strip()
     use_langfuse_prompt = bool(config.get("use_langfuse_prompt")) and bool(prompt_name)
@@ -242,20 +73,18 @@ def _resolve_llm_system_prompt(config: dict, state: dict) -> tuple[str, dict]:
     }
 
 
-def build_llm_node(
-    config: dict,
+def build_chat_llm_node(
+    config: JSONMapping,
     *,
     agent_name: Optional[str] = None,
     run_id: Optional[str] = None,
     node_name: Optional[str] = None,
-) -> Callable:
-    """Build an LLM call node from config."""
+) -> NodeRunner:
     provider = str(config.get("provider", "azure_openai")).strip().lower()
     model = config.get("model", "ai-agent-4o")
     provider_key_env_map = {
         "azure_openai": "AZURE_OPENAI_API_KEY",
         "azure": "AZURE_OPENAI_API_KEY",
-        # Backward-compatible alias: existing saved "openai" nodes now run via Azure OpenAI.
         "openai": "AZURE_OPENAI_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
     }
@@ -266,7 +95,7 @@ def build_llm_node(
     output_key = config.get("output_key", "llm_response")
     parse_json = config.get("parse_json_response", False)
 
-    def llm_node(state: dict) -> dict:
+    def llm_node(state: StatePayload) -> StatePayload:
         resolved_api_key_env = api_key_env
         api_key = os.getenv(api_key_env, "").strip()
         if provider in ("azure_openai", "azure", "openai") and not api_key and api_key_env == "OPENAI_API_KEY":
@@ -303,11 +132,8 @@ def build_llm_node(
                 input_payload={"messages": messages},
                 error=error_msg,
             )
-            return {
-                **state,
-                "_error": error_msg,
-                output_key: None,
-            }
+            return {**state, "_error": error_msg, output_key: None}
+
         if provider in ("azure_openai", "azure", "openai") and not azure_endpoint:
             error_msg = "Missing Azure endpoint. Set AZURE_OPENAI_ENDPOINT in backend runtime."
             log_llm_generation(
@@ -317,11 +143,8 @@ def build_llm_node(
                 input_payload={"messages": messages},
                 error=error_msg,
             )
-            return {
-                **state,
-                "_error": error_msg,
-                output_key: None,
-            }
+            return {**state, "_error": error_msg, output_key: None}
+
         if provider in ("azure_openai", "azure", "openai") and not azure_deployment:
             error_msg = "Missing Azure deployment name. Set node model or azure_deployment."
             log_llm_generation(
@@ -331,11 +154,7 @@ def build_llm_node(
                 input_payload={"messages": messages},
                 error=error_msg,
             )
-            return {
-                **state,
-                "_error": error_msg,
-                output_key: None,
-            }
+            return {**state, "_error": error_msg, output_key: None}
 
         try:
             langfuse_handler = langfuse_callback_handler()
@@ -369,9 +188,7 @@ def build_llm_node(
                             "response_format": {"type": "json_object"}
                         }
 
-                    llm = AzureChatOpenAI(
-                        **llm_kwargs,
-                    )
+                    llm = AzureChatOpenAI(**llm_kwargs)
                     response = llm.invoke(
                         [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)],
                         config={"callbacks": callbacks, "metadata": langfuse_metadata},
@@ -461,71 +278,24 @@ def build_llm_node(
                         **prompt_metadata,
                     },
                 )
-            
+
             if parse_json:
                 content = parse_json_content(content)
 
-
             return {**state, output_key: content}
 
-        except Exception as e:
+        except Exception as exc:
             log_llm_generation(
                 name=node_name or "llm_call",
                 provider=provider,
                 model=azure_deployment if provider in ("azure_openai", "azure", "openai") else model_name,
                 input_payload={"messages": messages},
-                error=str(e),
+                error=str(exc),
                 metadata={
                     "output_key": output_key,
                     **prompt_metadata,
                 },
             )
-            return {**state, "_error": str(e), output_key: None}
+            return {**state, "_error": str(exc), output_key: None}
 
     return llm_node
-
-
-# ─── Condition Router Builder ─────────────────────────────────────────────────
-
-def build_condition_router(condition_config: dict, edges: list) -> Callable:
-    """Build a routing function for conditional edges."""
-    condition_type = condition_config.get("condition_type", "state_key_equals")
-
-    def router(state: dict) -> str:
-        if condition_type == "state_key_equals":
-            cfg = condition_config.get("state_key_equals", {})
-            key = cfg.get("key", "")
-            value = cfg.get("value", "")
-            state_val = state.get(key, "")
-            # Find matching edge target
-            for edge in edges:
-                if edge.get("label") == str(state_val) or edge.get("target") == str(state_val):
-                    return edge.get("target")
-            # Default to first edge target
-            return edges[0].get("target") if edges else "__end__"
-
-        elif condition_type == "python_expression":
-            cfg = condition_config.get("python_expression", {})
-            expression = cfg.get("expression", "True")
-            try:
-                result = eval(expression, {"state": state})
-                if result and len(edges) > 0:
-                    return edges[0].get("target")
-                elif not result and len(edges) > 1:
-                    return edges[1].get("target")
-            except Exception:
-                pass
-            return edges[0].get("target") if edges else "__end__"
-
-        elif condition_type == "llm_router":
-            cfg = condition_config.get("llm_router", {})
-            routing_key = cfg.get("routing_key", "next_step")
-            routing_value = state.get(routing_key, "")
-            for edge in edges:
-                if edge.get("label") == str(routing_value):
-                    return edge.get("target")
-            return edges[0].get("target") if edges else "__end__"
-
-        return edges[0].get("target") if edges else "__end__"
-
-    return router

@@ -60,7 +60,9 @@
       }
     },
     "entry_node": "start_ingest",
-    "exit_node": "final_output"
+    "exit_nodes": [
+      "final_output"
+    ]
   },
   "nodes": [
     {

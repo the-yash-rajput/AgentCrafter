@@ -1,7 +1,9 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, Any, List
 from datetime import datetime
-from models import AgentStatus, NodeType, EdgeType, RunStatus
+from models import AgentStatus, NodeCategory, NodeSubtype, NodeType, EdgeType, RunStatus
+from services.node_definition import normalize_node_subtype, normalize_node_type, resolve_node_definition
+from type_defs import JSONMapping
 
 
 # ─── Agent Schemas ───────────────────────────────────────────────────────────
@@ -9,13 +11,12 @@ from models import AgentStatus, NodeType, EdgeType, RunStatus
 class AgentCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    input_schema: dict = Field(default_factory=dict)
-    output_schema: dict = Field(default_factory=dict)
-    state_schema: dict = Field(default_factory=dict)
+    input_schema: JSONMapping = Field(default_factory=dict)
+    output_schema: JSONMapping = Field(default_factory=dict)
+    state_schema: JSONMapping = Field(default_factory=dict)
     entry_node: Optional[str] = None
-    exit_node: Optional[str] = None
     exit_nodes: List[str] = Field(default_factory=list)
-    metadata_: dict = Field(default_factory=dict, alias="metadata")
+    metadata_: JSONMapping = Field(default_factory=dict, alias="metadata")
 
     class Config:
         populate_by_name = True
@@ -25,13 +26,12 @@ class AgentUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     status: Optional[AgentStatus] = None
-    input_schema: Optional[dict] = None
-    output_schema: Optional[dict] = None
-    state_schema: Optional[dict] = None
+    input_schema: Optional[JSONMapping] = None
+    output_schema: Optional[JSONMapping] = None
+    state_schema: Optional[JSONMapping] = None
     entry_node: Optional[str] = None
-    exit_node: Optional[str] = None
     exit_nodes: Optional[List[str]] = None
-    metadata_: Optional[dict] = Field(default=None, alias="metadata")
+    metadata_: Optional[JSONMapping] = Field(default=None, alias="metadata")
 
     class Config:
         populate_by_name = True
@@ -42,13 +42,12 @@ class AgentResponse(BaseModel):
     name: str
     description: Optional[str]
     status: AgentStatus
-    input_schema: dict
-    output_schema: dict
-    state_schema: dict
+    input_schema: JSONMapping
+    output_schema: JSONMapping
+    state_schema: JSONMapping
     entry_node: Optional[str]
-    exit_node: Optional[str]
     exit_nodes: List[str] = Field(default_factory=list)
-    metadata: dict = Field(default_factory=dict, alias="metadata_")
+    metadata: JSONMapping = Field(default_factory=dict, alias="metadata_")
     created_at: datetime
     updated_at: datetime
 
@@ -67,16 +66,50 @@ class AgentWithGraph(AgentResponse):
 class NodeCreate(BaseModel):
     name: str
     type: NodeType
-    config: dict = Field(default_factory=dict)
+    subtype: Optional[NodeSubtype] = None
+    config: JSONMapping = Field(default_factory=dict)
     position_x: float = 0.0
     position_y: float = 0.0
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def validate_type(cls, value):
+        return normalize_node_type(value)
+
+    @field_validator("subtype", mode="before")
+    @classmethod
+    def validate_subtype(cls, value):
+        return normalize_node_subtype(value)
+
+    @model_validator(mode="after")
+    def sync_subtype_and_config(self):
+        self.type, self.subtype, self.config = resolve_node_definition(
+            self.type,
+            self.subtype,
+            self.config,
+        )
+        return self
 
 
 class NodeUpdate(BaseModel):
     name: Optional[str] = None
-    config: Optional[dict] = None
+    type: Optional[NodeType] = None
+    subtype: Optional[NodeSubtype] = None
+    config: Optional[JSONMapping] = None
     position_x: Optional[float] = None
     position_y: Optional[float] = None
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def validate_type(cls, value):
+        if value is None:
+            return value
+        return normalize_node_type(value)
+
+    @field_validator("subtype", mode="before")
+    @classmethod
+    def validate_subtype(cls, value):
+        return normalize_node_subtype(value)
 
 
 class NodeResponse(BaseModel):
@@ -84,7 +117,8 @@ class NodeResponse(BaseModel):
     agent_id: int
     name: str
     type: NodeType
-    config: dict
+    subtype: NodeSubtype
+    config: JSONMapping
     position_x: float
     position_y: float
     created_at: datetime
@@ -99,7 +133,7 @@ class EdgeCreate(BaseModel):
     source_node_id: int
     target_node_id: int
     edge_type: EdgeType = EdgeType.direct
-    condition_config: dict = Field(default_factory=dict)
+    condition_config: JSONMapping = Field(default_factory=dict)
     label: Optional[str] = None
 
 
@@ -107,7 +141,7 @@ class EdgeUpdate(BaseModel):
     source_node_id: Optional[int] = None
     target_node_id: Optional[int] = None
     edge_type: Optional[EdgeType] = None
-    condition_config: Optional[dict] = None
+    condition_config: Optional[JSONMapping] = None
     label: Optional[str] = None
 
 
@@ -117,7 +151,7 @@ class EdgeResponse(BaseModel):
     source_node_id: int
     target_node_id: int
     edge_type: EdgeType
-    condition_config: dict
+    condition_config: JSONMapping
     label: Optional[str]
     created_at: datetime
 
@@ -128,19 +162,32 @@ class EdgeResponse(BaseModel):
 # ─── Run Schemas ──────────────────────────────────────────────────────────────
 
 class RunCreate(BaseModel):
-    input_data: dict = Field(default_factory=dict)
+    input_data: JSONMapping = Field(default_factory=dict)
 
 
 class RunResponse(BaseModel):
     id: int
     agent_id: int
     status: RunStatus
-    input_data: dict
-    output_data: dict
+    input_data: JSONMapping
+    output_data: JSONMapping
     state_snapshots: Any
     error: Optional[str]
     started_at: datetime
     completed_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class NodeDefinitionResponse(BaseModel):
+    type: NodeType
+    subtype: NodeSubtype
+    category: NodeCategory
+    label: str
+    description: str
+    show_in_frontend: bool
+    default_config: JSONMapping
 
     class Config:
         from_attributes = True

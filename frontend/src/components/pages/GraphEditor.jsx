@@ -254,47 +254,40 @@ const GraphEditorInner = () => {
   // Handle dropping new nodes from palette
   const onDrop = useCallback(async (event) => {
     event.preventDefault()
-    const nodeType = event.dataTransfer.getData('application/reactflow')
-    if (!nodeType) return
+    const rawNodeDefinition = event.dataTransfer.getData('application/reactflow')
+    if (!rawNodeDefinition) return
+
+    let nodeDefinition
+    try {
+      nodeDefinition = JSON.parse(rawNodeDefinition)
+    } catch {
+      const isLegacyLLM = rawNodeDefinition === 'llm_call'
+      nodeDefinition = {
+        type: isLegacyLLM ? 'llm_call' : 'functional',
+        subtype: isLegacyLLM ? 'chat' : rawNodeDefinition,
+      }
+    }
+
+    const nodeType = nodeDefinition?.type
+    const nodeSubtype = nodeDefinition?.subtype
+    if (!nodeType || !nodeSubtype) return
 
     const position = screenToFlowPosition({ x: event.clientX, y: event.clientY })
     const nodeName = `node_${nodeCounter++}`
 
     const isLLM = nodeType === 'llm_call'
-    const defaultConfig = isLLM
-      ? {
-          node_type: 'llm_call',
-          provider: 'azure_openai',
-          model: 'ai-agent-4o',
-          api_key_env_var: 'AZURE_OPENAI_API_KEY',
-          use_langfuse_prompt: false,
-          langfuse_prompt_name: '',
-          system_prompt: 'You are a helpful assistant.',
-          user_prompt_template: '{{input}}',
-          temperature: 0.7,
-          max_tokens: 1000,
-          output_key: 'llm_response'
-        }
-      : {
-          node_type: 'functional',
-          function_type: nodeType === 'llm_call' ? 'python_inline' : nodeType,
-          python_inline: { code: 'def run(state):\n    return state' },
-          agent_call: {
-            target_agent_id: '',
-            target_agent_name: '',
-            input_mode: 'entire_state',
-            input_key: '',
-            input_template: '{\n  \"input\": \"{{input}}\"\n}',
-            output_mode: 'merge_state',
-            output_key: 'agent_result',
-            include_run_metadata: true,
-          },
-        }
+    const isCommunication = nodeType === 'communication'
+    const defaultConfig = {
+      ...(nodeDefinition?.default_config || {}),
+      function_type: (!isLLM && !isCommunication) ? nodeSubtype : undefined,
+      communication_type: isCommunication ? nodeSubtype : undefined,
+    }
 
     try {
       const created = await createNode(agentId, {
         name: nodeName,
-        type: isLLM ? 'llm_call' : 'functional',
+        type: nodeType,
+        subtype: nodeSubtype,
         config: defaultConfig,
         position_x: position.x,
         position_y: position.y,
@@ -302,7 +295,7 @@ const GraphEditorInner = () => {
 
       addNode({
         id: String(created.id),
-        type: isLLM ? 'llmNode' : 'functionalNode',
+        type: isLLM ? 'llmNode' : (isCommunication ? 'communicationNode' : 'functionalNode'),
         position,
         data: { ...created, label: nodeName },
       })

@@ -1,6 +1,6 @@
 import unittest
 
-from runtime.json_utils import parse_json_content
+from services.runtime.json_utils import parse_json_content
 
 
 class NodeBuildersTests(unittest.TestCase):

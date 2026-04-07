@@ -82,7 +82,9 @@
       }
     },
     "entry_node": "is_user_frustrated_node",
-    "exit_node": "final_message_processing_node"
+    "exit_nodes": [
+      "final_message_processing_node"
+    ]
   },
   "nodes": [
     {
