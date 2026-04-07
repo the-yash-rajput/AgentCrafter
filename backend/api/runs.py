@@ -1,15 +1,14 @@
 import asyncio
 from typing import List, AsyncGenerator
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import json
 
 from api.error_handling import translate_service_errors
 from db.session import get_db
-from models import Run, Agent
 from schemas.schemas import RunCreate, RunResponse
-from services.runtime.graph_runner import GraphRunner
+from services.run_service import RunService
 
 router = APIRouter(tags=["runs"])
 
@@ -17,63 +16,34 @@ router = APIRouter(tags=["runs"])
 @router.post("/agents/{agent_id}/run", response_model=RunResponse)
 @translate_service_errors
 def run_agent(agent_id: int, payload: RunCreate, db: Session = Depends(get_db)):
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    runner = GraphRunner(db)
-    
-    # Validate first
-    validation = runner.validate_graph(agent_id)
-    if not validation["valid"]:
-        raise HTTPException(status_code=400, detail={"errors": validation["errors"]})
-
-    try:
-        result = runner.compile_and_run(agent_id, payload.input_data)
-        run = db.query(Run).filter(Run.id == result["run_id"]).first()
-        return run
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return RunService(db).run_agent(agent_id, payload)
 
 
 @router.get("/agents/{agent_id}/validate")
 @translate_service_errors
 def validate_agent(agent_id: int, db: Session = Depends(get_db)):
-    runner = GraphRunner(db)
-    return runner.validate_graph(agent_id)
+    return RunService(db).validate_agent(agent_id)
 
 
 @router.get("/runs/{run_id}", response_model=RunResponse)
+@translate_service_errors
 def get_run(run_id: int, db: Session = Depends(get_db)):
-    run = db.query(Run).filter(Run.id == run_id).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
-    return run
+    return RunService(db).get_run(run_id)
 
 
 @router.get("/agents/{agent_id}/runs", response_model=List[RunResponse])
+@translate_service_errors
 def list_runs(agent_id: int, limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
-    limit = max(1, min(limit, 200))
-    offset = max(0, offset)
-    return (
-        db.query(Run)
-        .filter(Run.agent_id == agent_id)
-        .order_by(Run.started_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    return RunService(db).list_runs(agent_id, limit=limit, offset=offset)
 
 
 @router.get("/runs/{run_id}/stream")
+@translate_service_errors
 async def stream_run(run_id: int, db: Session = Depends(get_db)):
     """SSE endpoint to stream run state snapshots."""
-    async def event_generator() -> AsyncGenerator[str, None]:
-        run = db.query(Run).filter(Run.id == run_id).first()
-        if not run:
-            yield f"data: {json.dumps({'error': 'Run not found'})}\n\n"
-            return
+    run = RunService(db).get_run(run_id)
 
+    async def event_generator() -> AsyncGenerator[str, None]:
         snapshots = run.state_snapshots or []
         for snapshot in snapshots:
             yield f"data: {json.dumps(snapshot)}\n\n"

@@ -17,7 +17,7 @@ class GraphRuntimeRepository:
     def fetch_for_execution(self, agent_id: int) -> GraphFetchResult:
         agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:
-            raise ValueError(f"Agent {agent_id} not found")
+            raise NotFoundError(f"Agent {agent_id} not found")
 
         nodes = (
             self.db.query(Node)
