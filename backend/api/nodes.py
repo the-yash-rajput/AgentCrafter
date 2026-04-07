@@ -31,6 +31,11 @@ def add_node(agent_id: int, payload: NodeCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Invalid node payload: {exc.orig}") from exc
     db.refresh(node)
+    
+    from api.audit_helper import record_agent_audit
+    record_agent_audit(db, agent_id, "add_node")
+    db.commit()
+    
     return node
 
 
@@ -41,6 +46,7 @@ def update_node(node_id: int, payload: NodeUpdate, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="Node not found")
 
     update_data = payload.model_dump(exclude_unset=True)
+    has_config_changes = any(k not in ("position_x", "position_y") for k in update_data.keys())
     previous_name = node.name
     for key, value in update_data.items():
         setattr(node, key, value)
@@ -64,6 +70,12 @@ def update_node(node_id: int, payload: NodeUpdate, db: Session = Depends(get_db)
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Invalid node update: {exc.orig}") from exc
     db.refresh(node)
+    
+    if has_config_changes:
+        from api.audit_helper import record_agent_audit
+        record_agent_audit(db, node.agent_id, "update_node")
+        db.commit()
+        
     return node
 
 
@@ -81,6 +93,12 @@ def delete_node(node_id: int, db: Session = Depends(get_db)):
         agent.exit_nodes = exit_nodes
         agent.exit_node = exit_nodes[0] if exit_nodes else None
 
+    agent_id = node.agent_id
     db.delete(node)
     db.commit()
+    
+    from api.audit_helper import record_agent_audit
+    record_agent_audit(db, agent_id, "delete_node")
+    db.commit()
+    
     return {"message": "Node deleted"}

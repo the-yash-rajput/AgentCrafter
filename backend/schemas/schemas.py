@@ -146,4 +146,14 @@ class RunResponse(BaseModel):
         from_attributes = True
 
 
+class AgentAuditResponse(BaseModel):
+    id: int
+    agent_id: int
+    action: str
+    snapshot: dict
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 AgentWithGraph.model_rebuild()

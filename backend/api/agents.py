@@ -7,7 +7,8 @@ from sqlalchemy.exc import IntegrityError
 from agent_exit_nodes import get_agent_exit_nodes, sync_exit_fields
 from db.session import get_db
 from models import Agent, Node, Edge, AgentStatus
-from schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, AgentWithGraph
+from models.agent_audit import AgentAudit
+from schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, AgentWithGraph, AgentAuditResponse
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -104,6 +105,11 @@ def update_agent(agent_id: int, payload: AgentUpdate, db: Session = Depends(get_
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Invalid agent update: {exc.orig}") from exc
     db.refresh(agent)
+    
+    from api.audit_helper import record_agent_audit
+    record_agent_audit(db, agent_id, "update_agent")
+    db.commit()
+    
     return agent
 
 
@@ -269,3 +275,17 @@ def import_agent(data: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=f"Invalid import payload: {exc.orig}") from exc
     db.refresh(new_agent)
     return new_agent
+
+@router.get("/{agent_id}/audits", response_model=List[AgentAuditResponse])
+def get_agent_audits(agent_id: int, limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    audits = (
+        db.query(AgentAudit)
+        .filter(AgentAudit.agent_id == agent_id)
+        .order_by(AgentAudit.created_at.desc())
+        .offset(offset).limit(limit)
+        .all()
+    )
+    return audits
