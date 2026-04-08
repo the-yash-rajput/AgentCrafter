@@ -18,11 +18,10 @@ from services.session_history import (
 )
 from services.runtime.json_utils import JSON_RESPONSE_INSTRUCTION, parse_json_content
 from services.runtime.langfuse_tracing import (
-    end_runtime_span,
-    get_current_trace_context,
+    end_current_runtime_span,
     log_llm_generation,
     log_runtime_event,
-    start_runtime_span,
+    start_current_runtime_span,
 )
 from services.runtime.model_call_limit import consume_model_call, ensure_model_call_limiter
 from services.runtime.tool_call_limit import ensure_tool_call_limiter
@@ -140,6 +139,7 @@ def build_chat_llm_node(
         tool_limiter = ensure_tool_call_limiter(execution_context)
         model_call_consumed = False
         model_span = None
+        model_scope = None
         model_span_output: dict[str, Any] | None = None
         resolved_api_key_env = api_key_env
         api_key = os.getenv(api_key_env, "").strip()
@@ -211,7 +211,7 @@ def build_chat_llm_node(
             )
             consume_model_call(execution_context)
             model_call_consumed = True
-            model_span = start_runtime_span(
+            model_span, model_scope = start_current_runtime_span(
                 name="model",
                 input_payload={"messages": messages},
                 metadata={
@@ -221,8 +221,12 @@ def build_chat_llm_node(
                 },
             )
             langfuse_session_id = str(state.get(SESSION_ID_KEY) or run_id or "").strip() or None
-            langfuse_handler = langfuse_callback_handler(trace_context=get_current_trace_context())
-            langfuse_metadata = get_langfuse_metadata(
+            shared_langfuse_handler = (execution_context or {}).get("langfuse_handler")
+            shared_langfuse_metadata = dict((execution_context or {}).get("langfuse_metadata") or {})
+            langfuse_handler = shared_langfuse_handler or langfuse_callback_handler()
+            langfuse_metadata = {
+                **shared_langfuse_metadata,
+                **get_langfuse_metadata(
                 session_id=langfuse_session_id,
                 tags=[value for value in (agent_name, node_name, provider) if value],
                 node_name=node_name,
@@ -230,7 +234,8 @@ def build_chat_llm_node(
                 prompt_name=prompt_metadata.get("prompt_name"),
                 prompt_source=prompt_metadata.get("prompt_source"),
                 prompt_label=prompt_metadata.get("prompt_label"),
-            )
+                ),
+            }
             callbacks = [langfuse_handler] if langfuse_handler is not None else []
 
             if provider in ("azure_openai", "azure", "openai"):
@@ -420,6 +425,10 @@ def build_chat_llm_node(
             )
             return {**state, "_error": str(exc), output_key: None}
         finally:
-            end_runtime_span(model_span, output_payload=model_span_output)
+            end_current_runtime_span(
+                model_span,
+                model_scope,
+                output_payload=model_span_output,
+            )
 
     return llm_node

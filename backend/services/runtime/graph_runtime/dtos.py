@@ -64,6 +64,8 @@ class TraceSession:
     trace: Any = None
     token: Any = None
     exit_stack: ExitStack | None = None
+    callback_handler: Any = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

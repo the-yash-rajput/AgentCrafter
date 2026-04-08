@@ -93,7 +93,14 @@ class GraphRunner:
         )
         snapshots: list[dict] = []
         current_state = dict(initial_state or {})
-        trace_session = self.trace_service.start(graph_data, run, current_state)
+        trace_session = self.trace_service.start(
+            graph_data,
+            run,
+            current_state,
+            execution_context=request.execution_context,
+        )
+        request.execution_context["langfuse_handler"] = trace_session.callback_handler
+        request.execution_context["langfuse_metadata"] = dict(trace_session.metadata or {})
         exit_nodes = set(get_agent_exit_nodes(graph_data.agent))
 
         try:

@@ -155,6 +155,65 @@ class ChatNodeModelCallLimitTests(unittest.TestCase):
             ],
         )
 
+    def test_chat_llm_node_prefers_shared_langfuse_handler_from_execution_context(self) -> None:
+        class FakeResponse:
+            content = "ok"
+
+        class FakeAzureChatOpenAI:
+            def __init__(self, **_kwargs) -> None:
+                pass
+
+            def invoke(self, _messages, config=None):
+                self.config = config
+                return FakeResponse()
+
+        shared_handler = object()
+        node = build_chat_llm_node(
+            {
+                "provider": "azure_openai",
+                "model": "test-model",
+                "user_prompt_template": "{{input}}",
+                "output_key": "answer",
+            },
+            execution_context={
+                MODEL_CALL_LIMIT_CONTEXT_KEY: ModelCallLimiter(run_limit=2),
+                "langfuse_handler": shared_handler,
+                "langfuse_metadata": {"agent_name": "demo-agent"},
+            },
+            run_id="run-1",
+            node_name="chat-node",
+        )
+
+        fake_llm = FakeAzureChatOpenAI()
+        with patch.dict(
+            os.environ,
+            {
+                "AZURE_OPENAI_API_KEY": "test-key",
+                "AZURE_OPENAI_ENDPOINT": "https://example.openai.azure.com",
+            },
+            clear=False,
+        ), patch.dict(
+            sys.modules,
+            {
+                "langchain_openai": types.SimpleNamespace(
+                    AzureChatOpenAI=lambda **_kwargs: fake_llm
+                ),
+            },
+        ), patch.object(
+            chat_module,
+            "langfuse_callback_handler",
+            side_effect=AssertionError("unexpected fallback handler creation"),
+        ), patch.object(
+            chat_module,
+            "_build_langchain_messages",
+            side_effect=lambda messages: messages,
+        ):
+            result = node({"input": "hello"})
+
+        self.assertEqual(result["answer"], "ok")
+        self.assertEqual(fake_llm.config["callbacks"], [shared_handler])
+        self.assertEqual(fake_llm.config["metadata"]["agent_name"], "demo-agent")
+
 
 if __name__ == "__main__":
     unittest.main()

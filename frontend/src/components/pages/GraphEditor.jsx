@@ -24,6 +24,28 @@ const LAYOUT_COLUMN_GAP = 72
 const LAYOUT_ROW_GAP = 110
 const COMPONENT_GAP = 180
 
+const getSuggestedNodeName = (nodes) => {
+  const existingNames = new Set(
+    nodes
+      .map(node => String(node.data?.name || '').trim())
+      .filter(Boolean)
+  )
+
+  let nextCounter = nodeCounter
+  while (existingNames.has(`node_${nextCounter}`)) {
+    nextCounter += 1
+  }
+
+  return `node_${nextCounter}`
+}
+
+const syncNodeCounter = (nodeName) => {
+  const match = /^node_(\d+)$/.exec(String(nodeName || '').trim())
+  if (!match) return
+
+  nodeCounter = Math.max(nodeCounter, Number(match[1]) + 1)
+}
+
 const getNodeSize = (node) => ({
   width: node.width || node.measured?.width || DEFAULT_NODE_WIDTH,
   height: node.height || node.measured?.height || DEFAULT_NODE_HEIGHT,
@@ -226,6 +248,8 @@ const GraphEditorInner = () => {
   const [configPanelWidth, setConfigPanelWidth] = useState(320)
   const [isResizingPanel, setIsResizingPanel] = useState(false)
   const [isRearranging, setIsRearranging] = useState(false)
+  const [pendingNodeCreation, setPendingNodeCreation] = useState(null)
+  const [pendingNodeName, setPendingNodeName] = useState('')
 
   useEffect(() => {
     const load = async () => {
@@ -252,28 +276,10 @@ const GraphEditorInner = () => {
   }, [])
 
   // Handle dropping new nodes from palette
-  const onDrop = useCallback(async (event) => {
-    event.preventDefault()
-    const rawNodeDefinition = event.dataTransfer.getData('application/reactflow')
-    if (!rawNodeDefinition) return
-
-    let nodeDefinition
-    try {
-      nodeDefinition = JSON.parse(rawNodeDefinition)
-    } catch {
-      const isLegacyLLM = rawNodeDefinition === 'llm_call'
-      nodeDefinition = {
-        type: isLegacyLLM ? 'llm_call' : 'functional',
-        subtype: isLegacyLLM ? 'chat' : rawNodeDefinition,
-      }
-    }
-
+  const createCanvasNode = useCallback(async ({ nodeDefinition, position, nodeName }) => {
     const nodeType = nodeDefinition?.type
     const nodeSubtype = nodeDefinition?.subtype
-    if (!nodeType || !nodeSubtype) return
-
-    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY })
-    const nodeName = `node_${nodeCounter++}`
+    if (!nodeType || !nodeSubtype) return false
 
     const isLLM = nodeType === 'llm_call'
     const isCommunication = nodeType === 'communication'
@@ -299,10 +305,75 @@ const GraphEditorInner = () => {
         position,
         data: { ...created, label: nodeName },
       })
+      syncNodeCounter(nodeName)
+      return true
     } catch (e) {
       toast.error('Failed to create node')
+      return false
     }
-  }, [agentId, screenToFlowPosition, addNode])
+  }, [agentId, addNode])
+
+  const onDrop = useCallback((event) => {
+    event.preventDefault()
+    const rawNodeDefinition = event.dataTransfer.getData('application/reactflow')
+    if (!rawNodeDefinition) return
+
+    let nodeDefinition
+    try {
+      nodeDefinition = JSON.parse(rawNodeDefinition)
+    } catch {
+      const isLegacyLLM = rawNodeDefinition === 'llm_call'
+      nodeDefinition = {
+        type: isLegacyLLM ? 'llm_call' : 'functional',
+        subtype: isLegacyLLM ? 'chat' : rawNodeDefinition,
+      }
+    }
+
+    const nodeType = nodeDefinition?.type
+    const nodeSubtype = nodeDefinition?.subtype
+    if (!nodeType || !nodeSubtype) return
+
+    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY })
+    const suggestedNodeName = getSuggestedNodeName(nodes)
+
+    setPendingNodeCreation({
+      nodeDefinition,
+      position,
+      nodeType,
+      nodeSubtype,
+    })
+    setPendingNodeName(suggestedNodeName)
+  }, [nodes, screenToFlowPosition])
+
+  const closePendingNodeCreation = useCallback(() => {
+    setPendingNodeCreation(null)
+    setPendingNodeName('')
+  }, [])
+
+  const confirmPendingNodeCreation = useCallback(async () => {
+    if (!pendingNodeCreation) return
+
+    const trimmedNodeName = pendingNodeName.trim()
+    if (!trimmedNodeName) {
+      toast.error('Node name is required')
+      return
+    }
+
+    const hasDuplicateName = nodes.some(
+      node => String(node.data?.name || '').trim().toLowerCase() === trimmedNodeName.toLowerCase()
+    )
+    if (hasDuplicateName) {
+      toast.error('A node with this name already exists')
+      return
+    }
+
+    const created = await createCanvasNode({
+      nodeDefinition: pendingNodeCreation.nodeDefinition,
+      position: pendingNodeCreation.position,
+      nodeName: trimmedNodeName,
+    })
+    if (created) closePendingNodeCreation()
+  }, [closePendingNodeCreation, createCanvasNode, nodes, pendingNodeCreation, pendingNodeName])
 
   const onDragOver = useCallback((event) => {
     event.preventDefault()
@@ -536,6 +607,57 @@ const GraphEditorInner = () => {
       )}
       {showRunModal && agent && (
         <RunModal agent={agent} onClose={() => setShowRunModal(false)} />
+      )}
+      {pendingNodeCreation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)' }}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              confirmPendingNodeCreation()
+            }}
+            className="w-[420px] max-w-[92vw] rounded-2xl"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border2)' }}
+          >
+            <div className="px-6 py-5 border-b" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="text-base font-semibold text-white">Name New Node</h2>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                Enter the node name before adding it to the canvas.
+              </p>
+            </div>
+
+            <div className="px-6 py-5">
+              <label className="block text-xs font-mono uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>
+                Node Name
+              </label>
+              <input
+                autoFocus
+                value={pendingNodeName}
+                onChange={(event) => setPendingNodeName(event.target.value)}
+                placeholder="node_name"
+                className="w-full px-3 py-2.5 rounded-lg text-sm outline-none"
+                style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t" style={{ borderColor: 'var(--border)' }}>
+              <button
+                type="button"
+                onClick={closePendingNodeCreation}
+                className="px-4 py-2 rounded-lg text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-lg text-sm font-semibold"
+                style={{ background: 'var(--accent)', color: '#fff' }}
+              >
+                Add Node
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </div>
   )

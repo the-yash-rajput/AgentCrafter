@@ -10,7 +10,7 @@ from models import Edge, EdgeType, Node, NodeType
 from services.agent_exit_nodes import get_agent_exit_nodes
 from services.runtime.edge_router import build_condition_router
 from services.runtime.graph_runtime.dtos import CompiledGraphArtifact, LangGraphBuildRequest
-from services.runtime.langfuse_tracing import end_runtime_span, start_runtime_span
+from services.runtime.langfuse_tracing import end_current_runtime_span, start_current_runtime_span
 from services.runtime.nodes.factory import NodeRunnerFactory
 from services.runtime.tool_call_limit import consume_tool_call
 from type_defs import ExecutionContext, StatePayload
@@ -140,11 +140,12 @@ class LangGraphBuilder:
         def wrapped(state: StatePayload) -> StatePayload:
             before = dict(state)
             tool_span = None
+            tool_scope = None
             tool_span_output: dict | None = None
             try:
                 if node.type != NodeType.llm_call:
                     consume_tool_call(execution_context)
-                    tool_span = start_runtime_span(
+                    tool_span, tool_scope = start_current_runtime_span(
                         name="tools",
                         input_payload={"node_name": node.name},
                         metadata={
@@ -188,6 +189,6 @@ class LangGraphBuilder:
                 }
                 raise
             finally:
-                end_runtime_span(tool_span, output_payload=tool_span_output)
+                end_current_runtime_span(tool_span, tool_scope, output_payload=tool_span_output)
 
         return wrapped

@@ -199,25 +199,50 @@ def end_runtime_span(span: Any, output_payload: Any = None):
         pass
 
 
-def get_current_trace_context() -> Optional[dict]:
+def start_current_runtime_span(
+    name: str,
+    input_payload: Any = None,
+    metadata: Optional[dict] = None,
+):
     """
-    Build trace_context payload for Langfuse CallbackHandler so callback observations
-    stay attached to the active runtime trace/observation.
+    Start a child observation as the current Langfuse scope when supported.
+    Returns `(observation, scope)` where `scope` is a context manager that must be exited.
     """
     trace = _current_trace.get()
     if trace is None:
-        return None
+        return None, None
 
-    trace_id = getattr(trace, "trace_id", None) or getattr(trace, "id", None)
-    parent_observation_id = getattr(trace, "id", None)
+    kwargs: Dict[str, Any] = {
+        "as_type": "chain",
+        "name": name,
+        "metadata": _to_serializable(metadata or {}),
+    }
+    if input_payload is not None:
+        kwargs["input"] = _to_serializable(input_payload)
 
-    if not trace_id:
-        return None
+    try:
+        if hasattr(trace, "start_as_current_observation"):
+            scope = trace.start_as_current_observation(**kwargs)
+            return scope.__enter__(), scope
+    except Exception:
+        return start_runtime_span(name, input_payload=input_payload, metadata=metadata), None
 
-    context = {"trace_id": str(trace_id)}
-    if parent_observation_id:
-        context["parent_observation_id"] = str(parent_observation_id)
-    return context
+    return start_runtime_span(name, input_payload=input_payload, metadata=metadata), None
+
+
+def end_current_runtime_span(
+    span: Any,
+    scope: Any = None,
+    output_payload: Any = None,
+):
+    end_runtime_span(span, output_payload=output_payload)
+    if scope is None:
+        return
+
+    try:
+        scope.__exit__(None, None, None)
+    except Exception:
+        pass
 
 
 def flush_langfuse():
