@@ -15,6 +15,7 @@ from type_defs import StatePayload
 
 
 class LangGraphBuilder:
+    
     def __init__(self, db, node_factory: NodeRunnerFactory | None = None):
         self.db = db
         self.node_factory = node_factory or NodeRunnerFactory()
@@ -133,7 +134,7 @@ class LangGraphBuilder:
                     "node_name": node.name,
                     "node_type": node.type.value,
                     "node_subtype": node.subtype.value,
-                    "node_output": result,
+                    # "node_output": result,
                     "state_before": before,
                     "state_after": after,
                     "timestamp": datetime.utcnow().isoformat(),

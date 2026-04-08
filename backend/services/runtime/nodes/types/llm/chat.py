@@ -18,7 +18,8 @@ from services.session_history import (
 )
 from services.runtime.json_utils import JSON_RESPONSE_INSTRUCTION, parse_json_content
 from services.runtime.langfuse_tracing import log_llm_generation
-from type_defs import JSONMapping, NodeRunner, StatePayload
+from services.runtime.model_call_limit import consume_model_call
+from type_defs import ExecutionContext, JSONMapping, NodeRunner, StatePayload
 
 
 def _render_template(template_value: Any, state: StatePayload) -> str:
@@ -107,6 +108,7 @@ def _resolve_llm_system_prompt(config: JSONMapping, state: StatePayload) -> tupl
 def build_chat_llm_node(
     config: JSONMapping,
     *,
+    execution_context: Optional[ExecutionContext] = None,
     agent_name: Optional[str] = None,
     run_id: Optional[str] = None,
     node_name: Optional[str] = None,
@@ -184,6 +186,7 @@ def build_chat_llm_node(
             return {**state, "_error": error_msg, output_key: None}
 
         try:
+            consume_model_call(execution_context)
             langfuse_session_id = str(state.get(SESSION_ID_KEY) or run_id or "").strip() or None
             langfuse_handler = langfuse_callback_handler()
             langfuse_metadata = get_langfuse_metadata(
