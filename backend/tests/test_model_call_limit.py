@@ -29,6 +29,11 @@ from services.runtime.model_call_limit import (
     ModelCallLimiter,
     ensure_model_call_limiter,
 )
+from services.runtime.tool_call_limit import (
+    TOOL_CALL_LIMIT_CONTEXT_KEY,
+    ToolCallLimiter,
+    ensure_tool_call_limiter,
+)
 
 _CHAT_MODULE_PATH = BACKEND_ROOT / "services/runtime/nodes/types/llm/chat.py"
 _CHAT_MODULE_SPEC = importlib.util.spec_from_file_location(
@@ -52,6 +57,21 @@ class ModelCallLimitContextTests(unittest.TestCase):
 
         self.assertIs(
             ensure_model_call_limiter(nested_execution_context),
+            limiter,
+        )
+
+
+class ToolCallLimitContextTests(unittest.TestCase):
+    def test_shallow_copied_execution_context_reuses_same_tool_limiter(self) -> None:
+        limiter = ToolCallLimiter(run_limit=30)
+        execution_context = {TOOL_CALL_LIMIT_CONTEXT_KEY: limiter}
+        nested_execution_context = {
+            **execution_context,
+            "call_stack": [7],
+        }
+
+        self.assertIs(
+            ensure_tool_call_limiter(nested_execution_context),
             limiter,
         )
 
@@ -85,6 +105,7 @@ class ChatNodeModelCallLimitTests(unittest.TestCase):
             run_id="run-1",
             node_name="chat-node",
         )
+        runtime_events = []
 
         with patch.dict(
             os.environ,
@@ -112,6 +133,10 @@ class ChatNodeModelCallLimitTests(unittest.TestCase):
             chat_module,
             "_build_langchain_messages",
             side_effect=lambda messages: messages,
+        ), patch.object(
+            chat_module,
+            "log_runtime_event",
+            side_effect=lambda **kwargs: runtime_events.append(kwargs),
         ):
             first_result = node({"input": "hello"})
             second_result = node({"input": "again"})
@@ -120,6 +145,15 @@ class ChatNodeModelCallLimitTests(unittest.TestCase):
         self.assertEqual(FakeAzureChatOpenAI.invoke_count, 1)
         self.assertIsNone(second_result["answer"])
         self.assertIn("Model call limit exceeded", second_result["_error"])
+        self.assertEqual(
+            [event["name"] for event in runtime_events],
+            [
+                "ModelCallLimitMiddleware.before_model",
+                "ModelCallLimitMiddleware.after_model",
+                "ToolCallLimitMiddleware.after_model",
+                "ModelCallLimitMiddleware.before_model",
+            ],
+        )
 
 
 if __name__ == "__main__":

@@ -6,12 +6,14 @@ from typing import Dict
 
 from langgraph.graph import END, StateGraph
 
-from models import Edge, EdgeType, Node
+from models import Edge, EdgeType, Node, NodeType
 from services.agent_exit_nodes import get_agent_exit_nodes
 from services.runtime.edge_router import build_condition_router
 from services.runtime.graph_runtime.dtos import CompiledGraphArtifact, LangGraphBuildRequest
+from services.runtime.langfuse_tracing import end_runtime_span, start_runtime_span
 from services.runtime.nodes.factory import NodeRunnerFactory
-from type_defs import StatePayload
+from services.runtime.tool_call_limit import consume_tool_call
+from type_defs import ExecutionContext, StatePayload
 
 
 class LangGraphBuilder:
@@ -46,7 +48,15 @@ class LangGraphBuilder:
             except ValueError:
                 continue
 
-            workflow.add_node(node.name, self._wrap_node(node, fn, request.snapshots))
+            workflow.add_node(
+                node.name,
+                self._wrap_node(
+                    node,
+                    fn,
+                    request.snapshots,
+                    execution_context=request.execution_context,
+                ),
+            )
             node_map[node.name] = node
             node_id_to_name[node.id] = node.name
 
@@ -119,31 +129,65 @@ class LangGraphBuilder:
             executable_node_names=set(node_map),
         )
 
-    def _wrap_node(self, node: Node, fn, snapshots: list[dict]):
+    def _wrap_node(
+        self,
+        node: Node,
+        fn,
+        snapshots: list[dict],
+        *,
+        execution_context: ExecutionContext | None = None,
+    ):
         def wrapped(state: StatePayload) -> StatePayload:
             before = dict(state)
-            result = fn(state)
+            tool_span = None
+            tool_span_output: dict | None = None
+            try:
+                if node.type != NodeType.llm_call:
+                    consume_tool_call(execution_context)
+                    tool_span = start_runtime_span(
+                        name="tools",
+                        input_payload={"node_name": node.name},
+                        metadata={
+                            "node_type": node.type.value,
+                            "node_subtype": node.subtype.value,
+                        },
+                    )
 
-            if not isinstance(result, dict):
-                result = {}
+                result = fn(state)
 
-            after = {**before, **result}
-            snapshots.append(
-                {
-                    "node_id": str(node.id),
+                if not isinstance(result, dict):
+                    result = {}
+
+                after = {**before, **result}
+                snapshots.append(
+                    {
+                        "node_id": str(node.id),
+                        "node_name": node.name,
+                        "node_type": node.type.value,
+                        "node_subtype": node.subtype.value,
+                        # "node_output": result,
+                        "state_before": before,
+                        "state_after": after,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
+
+                if "_error" in result and result["_error"]:
+                    raise RuntimeError(result["_error"])
+
+                tool_span_output = {
                     "node_name": node.name,
-                    "node_type": node.type.value,
-                    "node_subtype": node.subtype.value,
-                    # "node_output": result,
-                    "state_before": before,
-                    "state_after": after,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "status": "success",
                 }
-            )
-
-            if "_error" in result and result["_error"]:
-                raise RuntimeError(result["_error"])
-
-            return result
+                return result
+            except Exception as exc:
+                tool_span_output = {
+                    "node_name": node.name,
+                    "status": "error",
+                    "error": str(exc),
+                }
+                raise
+            finally:
+                end_runtime_span(tool_span, output_payload=tool_span_output)
 
         return wrapped

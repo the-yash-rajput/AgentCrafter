@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from contextlib import ExitStack
 from typing import Any
 
 from models import Agent, Edge, Node
@@ -62,6 +63,7 @@ class CompiledGraphArtifact:
 class TraceSession:
     trace: Any = None
     token: Any = None
+    exit_stack: ExitStack | None = None
 
 
 @dataclass(slots=True)

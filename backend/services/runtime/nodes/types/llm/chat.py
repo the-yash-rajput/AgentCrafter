@@ -17,8 +17,15 @@ from services.session_history import (
     normalize_conversation_history,
 )
 from services.runtime.json_utils import JSON_RESPONSE_INSTRUCTION, parse_json_content
-from services.runtime.langfuse_tracing import log_llm_generation
-from services.runtime.model_call_limit import consume_model_call
+from services.runtime.langfuse_tracing import (
+    end_runtime_span,
+    get_current_trace_context,
+    log_llm_generation,
+    log_runtime_event,
+    start_runtime_span,
+)
+from services.runtime.model_call_limit import consume_model_call, ensure_model_call_limiter
+from services.runtime.tool_call_limit import ensure_tool_call_limiter
 from type_defs import ExecutionContext, JSONMapping, NodeRunner, StatePayload
 
 
@@ -129,6 +136,11 @@ def build_chat_llm_node(
     parse_json = config.get("parse_json_response", False)
 
     def llm_node(state: StatePayload) -> StatePayload:
+        limiter = ensure_model_call_limiter(execution_context)
+        tool_limiter = ensure_tool_call_limiter(execution_context)
+        model_call_consumed = False
+        model_span = None
+        model_span_output: dict[str, Any] | None = None
         resolved_api_key_env = api_key_env
         api_key = os.getenv(api_key_env, "").strip()
         if provider in ("azure_openai", "azure", "openai") and not api_key and api_key_env == "OPENAI_API_KEY":
@@ -186,9 +198,30 @@ def build_chat_llm_node(
             return {**state, "_error": error_msg, output_key: None}
 
         try:
+            log_runtime_event(
+                name="ModelCallLimitMiddleware.before_model",
+                input_payload={
+                    "call_count": limiter.call_count,
+                    "run_limit": limiter.run_limit,
+                },
+                metadata={
+                    "node_name": node_name,
+                    "provider": provider,
+                },
+            )
             consume_model_call(execution_context)
+            model_call_consumed = True
+            model_span = start_runtime_span(
+                name="model",
+                input_payload={"messages": messages},
+                metadata={
+                    "node_name": node_name,
+                    "provider": provider,
+                    "model": model_name,
+                },
+            )
             langfuse_session_id = str(state.get(SESSION_ID_KEY) or run_id or "").strip() or None
-            langfuse_handler = langfuse_callback_handler()
+            langfuse_handler = langfuse_callback_handler(trace_context=get_current_trace_context())
             langfuse_metadata = get_langfuse_metadata(
                 session_id=langfuse_session_id,
                 tags=[value for value in (agent_name, node_name, provider) if value],
@@ -315,9 +348,65 @@ def build_chat_llm_node(
             if parse_json:
                 content = parse_json_content(content)
 
+            log_runtime_event(
+                name="ModelCallLimitMiddleware.after_model",
+                output_payload={
+                    "call_count": limiter.call_count,
+                    "run_limit": limiter.run_limit,
+                },
+                metadata={
+                    "node_name": node_name,
+                    "provider": provider,
+                },
+            )
+            log_runtime_event(
+                name="ToolCallLimitMiddleware.after_model",
+                output_payload={
+                    "tool_call_count": tool_limiter.call_count,
+                    "tool_run_limit": tool_limiter.run_limit,
+                },
+                metadata={
+                    "node_name": node_name,
+                    "provider": provider,
+                },
+            )
+            model_span_output = {
+                "output_key": output_key,
+                "status": "success",
+            }
             return {**state, output_key: content}
 
         except Exception as exc:
+            if model_call_consumed:
+                log_runtime_event(
+                    name="ModelCallLimitMiddleware.after_model",
+                    output_payload={
+                        "error": str(exc),
+                        "call_count": limiter.call_count,
+                        "run_limit": limiter.run_limit,
+                    },
+                    metadata={
+                        "node_name": node_name,
+                        "provider": provider,
+                    },
+                )
+                log_runtime_event(
+                    name="ToolCallLimitMiddleware.after_model",
+                    output_payload={
+                        "error": str(exc),
+                        "tool_call_count": tool_limiter.call_count,
+                        "tool_run_limit": tool_limiter.run_limit,
+                    },
+                    metadata={
+                        "node_name": node_name,
+                        "provider": provider,
+                    },
+                )
+            model_span_output = {
+                "output_key": output_key,
+                "status": "error",
+                "error": str(exc),
+            }
             log_llm_generation(
                 name=node_name or "llm_call",
                 provider=provider,
@@ -330,5 +419,7 @@ def build_chat_llm_node(
                 },
             )
             return {**state, "_error": str(exc), output_key: None}
+        finally:
+            end_runtime_span(model_span, output_payload=model_span_output)
 
     return llm_node

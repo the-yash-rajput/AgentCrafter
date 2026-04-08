@@ -43,15 +43,15 @@ def start_run_trace(
 
     try:
         return client.trace(
-            name=f"agent_run:{agent_name}",
+            name="LangGraph",
             input=_to_serializable(input_data),
-            metadata=metadata,
+            metadata={**metadata, "trace_type": "langgraph"},
             session_id=session_id or run_id,
         )
     except TypeError:
         # Older SDK compatibility.
         try:
-            return client.trace(name=f"agent_run:{agent_name}", metadata=metadata)
+            return client.trace(name="LangGraph", metadata={**metadata, "trace_type": "langgraph"})
         except Exception:
             return None
     except Exception:
@@ -132,6 +132,92 @@ def log_llm_generation(
                 span.end(output=_to_serializable(output_payload if output_payload is not None else {"error": error}))
     except Exception:
         pass
+
+
+def log_runtime_event(
+    name: str,
+    input_payload: Any = None,
+    output_payload: Any = None,
+    metadata: Optional[dict] = None,
+):
+    """Log a lightweight runtime span event under the current trace."""
+    trace = _current_trace.get()
+    if trace is None:
+        return
+
+    kwargs: Dict[str, Any] = {
+        "name": name,
+        "metadata": _to_serializable(metadata or {}),
+    }
+    if input_payload is not None:
+        kwargs["input"] = _to_serializable(input_payload)
+
+    try:
+        if hasattr(trace, "span"):
+            span = trace.span(**kwargs)
+            if hasattr(span, "end"):
+                span.end(output=_to_serializable(output_payload))
+            return
+    except Exception:
+        pass
+
+
+def start_runtime_span(
+    name: str,
+    input_payload: Any = None,
+    metadata: Optional[dict] = None,
+):
+    """Start a runtime span under the current trace and return it."""
+    trace = _current_trace.get()
+    if trace is None:
+        return None
+
+    kwargs: Dict[str, Any] = {
+        "name": name,
+        "metadata": _to_serializable(metadata or {}),
+    }
+    if input_payload is not None:
+        kwargs["input"] = _to_serializable(input_payload)
+
+    try:
+        if hasattr(trace, "span"):
+            return trace.span(**kwargs)
+    except Exception:
+        return None
+
+    return None
+
+
+def end_runtime_span(span: Any, output_payload: Any = None):
+    if span is None:
+        return
+
+    try:
+        if hasattr(span, "end"):
+            span.end(output=_to_serializable(output_payload))
+    except Exception:
+        pass
+
+
+def get_current_trace_context() -> Optional[dict]:
+    """
+    Build trace_context payload for Langfuse CallbackHandler so callback observations
+    stay attached to the active runtime trace/observation.
+    """
+    trace = _current_trace.get()
+    if trace is None:
+        return None
+
+    trace_id = getattr(trace, "trace_id", None) or getattr(trace, "id", None)
+    parent_observation_id = getattr(trace, "id", None)
+
+    if not trace_id:
+        return None
+
+    context = {"trace_id": str(trace_id)}
+    if parent_observation_id:
+        context["parent_observation_id"] = str(parent_observation_id)
+    return context
 
 
 def flush_langfuse():
