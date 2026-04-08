@@ -133,6 +133,7 @@ class LangGraphBuilder:
                     "node_name": node.name,
                     "node_type": node.type.value,
                     "node_subtype": node.subtype.value,
+                    "node_output": result,
                     "state_before": before,
                     "state_after": after,
                     "timestamp": datetime.utcnow().isoformat(),

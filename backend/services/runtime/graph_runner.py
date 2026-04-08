@@ -2,6 +2,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from services.agent_exit_nodes import get_agent_exit_nodes
 from services.session_history import (
     CONVERSATION_HISTORY_KEY,
     SESSION_ID_KEY,
@@ -10,6 +11,7 @@ from services.session_history import (
     normalize_session_id,
     strip_session_fields,
 )
+from services.state_schema import apply_state_schema_defaults
 from services.runtime.graph_runtime.builder import LangGraphBuilder
 from services.runtime.graph_runtime.dtos import GraphExecutionRequest
 from services.runtime.graph_runtime.executor import LangGraphExecutor
@@ -73,15 +75,22 @@ class GraphRunner:
         if not graph_data.nodes:
             raise ValueError("Agent has no nodes configured")
 
+        initial_state = apply_state_schema_defaults(request.input_data, graph_data.agent.state_schema)
+        persisted_initial_state = apply_state_schema_defaults(
+            request.persisted_input_data,
+            graph_data.agent.state_schema,
+        )
+
         run = self.repository.create_run(
             request.agent_id,
-            request.persisted_input_data,
+            persisted_initial_state,
             session_id=request.session_id,
             conversation_history=request.conversation_history,
         )
         snapshots: list[dict] = []
-        current_state = dict(request.input_data or {})
+        current_state = dict(initial_state or {})
         trace_session = self.trace_service.start(graph_data, run, current_state)
+        exit_nodes = set(get_agent_exit_nodes(graph_data.agent))
 
         try:
             compiled_graph = self.builder.compile(
@@ -99,13 +108,19 @@ class GraphRunner:
                 snapshots=snapshots,
             )
             current_state = result.output
-            persisted_output = strip_session_fields(current_state)
+            persisted_output = strip_session_fields(
+                self._resolve_final_output(
+                    current_state,
+                    snapshots=snapshots,
+                    exit_nodes=exit_nodes,
+                )
+            )
             self.repository.mark_run_success(
                 run,
                 persisted_output,
                 snapshots,
                 conversation_turn=build_conversation_turn(
-                    request.persisted_input_data,
+                    persisted_initial_state,
                     agent_output=persisted_output,
                 ),
             )
@@ -116,13 +131,19 @@ class GraphRunner:
             }
 
         except Exception as e:
-            persisted_output = strip_session_fields(current_state)
+            persisted_output = strip_session_fields(
+                self._resolve_final_output(
+                    current_state,
+                    snapshots=snapshots,
+                    exit_nodes=exit_nodes,
+                )
+            )
             self.repository.mark_run_failed(
                 run,
                 str(e),
                 snapshots,
                 conversation_turn=build_conversation_turn(
-                    request.persisted_input_data,
+                    persisted_initial_state,
                     agent_output=persisted_output,
                     error=str(e),
                 ),
@@ -155,3 +176,21 @@ class GraphRunner:
             execution_context=execution_context,
             run_id=run_id,
         )
+
+    @staticmethod
+    def _resolve_final_output(
+        current_state: StatePayload,
+        *,
+        snapshots: list[dict],
+        exit_nodes: set[str],
+    ) -> StatePayload:
+        if exit_nodes:
+            for snapshot in reversed(snapshots):
+                if snapshot.get("node_name") not in exit_nodes:
+                    continue
+                node_output = snapshot.get("node_output")
+                if isinstance(node_output, dict):
+                    return node_output
+                break
+
+        return current_state

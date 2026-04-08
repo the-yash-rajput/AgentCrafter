@@ -2,47 +2,6 @@
   "agent": {
     "name": "Quotes Agent (Imported)",
     "description": "Graph import that recreates the quotes_agent orchestration flow with phase routing, pre-data collection, data confirmation, quote processing, addons, and fallback.",
-    "input_schema": {
-      "messages": {
-        "type": "array",
-        "description": "Conversation history as list of {role, content}"
-      },
-      "current_phase": {
-        "type": "string",
-        "default": "pre_data_collection"
-      },
-      "collected_data": {
-        "type": "object",
-        "default": {}
-      },
-      "uploaded_documents": {
-        "type": "array",
-        "default": []
-      }
-    },
-    "output_schema": {
-      "messages": {
-        "type": "array"
-      },
-      "last_response": {
-        "type": "string"
-      },
-      "current_phase": {
-        "type": "string"
-      },
-      "collected_data": {
-        "type": "object"
-      },
-      "upload_doc_response": {
-        "type": "object"
-      },
-      "process_qis_response": {
-        "type": "object"
-      },
-      "quote_created": {
-        "type": "boolean"
-      }
-    },
     "state_schema": {
       "retry_count": {
         "type": "number",

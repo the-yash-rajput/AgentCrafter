@@ -11,8 +11,6 @@ from type_defs import JSONMapping
 class AgentCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    input_schema: JSONMapping = Field(default_factory=dict)
-    output_schema: JSONMapping = Field(default_factory=dict)
     state_schema: JSONMapping = Field(default_factory=dict)
     entry_node: Optional[str] = None
     exit_nodes: List[str] = Field(default_factory=list)
@@ -26,8 +24,6 @@ class AgentUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     status: Optional[AgentStatus] = None
-    input_schema: Optional[JSONMapping] = None
-    output_schema: Optional[JSONMapping] = None
     state_schema: Optional[JSONMapping] = None
     entry_node: Optional[str] = None
     exit_nodes: Optional[List[str]] = None
@@ -42,8 +38,6 @@ class AgentResponse(BaseModel):
     name: str
     description: Optional[str]
     status: AgentStatus
-    input_schema: JSONMapping
-    output_schema: JSONMapping
     state_schema: JSONMapping
     entry_node: Optional[str]
     exit_nodes: List[str] = Field(default_factory=list)

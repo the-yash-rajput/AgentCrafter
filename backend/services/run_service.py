@@ -10,6 +10,7 @@ from services.session_history import (
     flatten_conversation_history,
     normalize_session_id,
 )
+from services.state_schema import apply_state_schema_defaults, get_state_schema_session_key
 from services.exceptions import NotFoundError, ServiceError, ValidationError
 from services.runtime.graph_runner import GraphRunner
 
@@ -21,14 +22,17 @@ class RunService:
         self.db = db
 
     def run_agent(self, agent_id: int, payload: RunCreate) -> Run:
-        self._get_agent_or_404(agent_id)
+        agent = self._get_agent_or_404(agent_id)
 
         runner = GraphRunner(self.db)
         validation = runner.validate_graph(agent_id)
         if not validation["valid"]:
             raise ValidationError({"errors": validation["errors"]})
 
-        session_id = normalize_session_id(payload.session_id)
+        effective_input = apply_state_schema_defaults(payload.input_data, agent.state_schema)
+        session_field = get_state_schema_session_key(agent.state_schema)
+        derived_session_id = effective_input.get(session_field) if session_field else None
+        session_id = normalize_session_id(payload.session_id or derived_session_id)
         conversation_history = self._get_session_conversation(agent_id, session_id)
         runtime_input = dict(payload.input_data or {})
         execution_context = {

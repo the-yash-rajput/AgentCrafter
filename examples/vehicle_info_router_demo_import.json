@@ -2,30 +2,6 @@
   "agent": {
     "name": "Vehicle Info Router Demo",
     "description": "Demo graph that takes vehicle type (TW or FW) and vehicle name, routes to the correct LLM node, and returns vehicle information.",
-    "input_schema": {
-      "vehicle_type": {
-        "type": "string",
-        "description": "Vehicle type. Expected values: TW or FW"
-      },
-      "vehicle_name": {
-        "type": "string",
-        "description": "Vehicle name provided by the user"
-      }
-    },
-    "output_schema": {
-      "normalized_vehicle_type": {
-        "type": "string"
-      },
-      "vehicle_route": {
-        "type": "string"
-      },
-      "vehicle_info": {
-        "type": "string"
-      },
-      "final_summary": {
-        "type": "string"
-      }
-    },
     "state_schema": {
       "vehicle_type": {
         "type": "string",
