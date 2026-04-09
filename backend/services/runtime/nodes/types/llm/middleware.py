@@ -1,18 +1,18 @@
 from __future__ import annotations
+
 from typing import Any
-from langchain.agents.middleware import (
+
+
+def build_agent_middlewares(*, tool_run_limit: int = 30, model_run_limit: int = 15) -> list[Any]:
+    from langchain.agents.middleware import (
         ModelCallLimitMiddleware,
         ToolCallLimitMiddleware,
         wrap_tool_call,
     )
-from langchain_core.messages import ToolMessage
+    from langchain_core.messages import ToolMessage
 
-
-def build_agent_middlewares(*, tool_run_limit: int = 30, model_run_limit: int = 15) -> list[Any]:
-    
     @wrap_tool_call
     def handle_tool_errors(request, handler):
-        """Handle tool execution errors with custom messages."""
         try:
             return handler(request)
         except Exception as exc:
@@ -30,4 +30,3 @@ def build_agent_middlewares(*, tool_run_limit: int = 30, model_run_limit: int = 
         handle_tool_errors,
         ModelCallLimitMiddleware(run_limit=model_run_limit),
     ]
-
