@@ -51,6 +51,7 @@ export const NodePalette = ({ onClose }) => {
 
   const iconBySubtype = {
     chat: Brain,
+    llm_agent: Boxes,
     python_inline: Code2,
     api_call: Globe,
     agent_call: Boxes,
@@ -60,6 +61,7 @@ export const NodePalette = ({ onClose }) => {
   }
   const colorBySubtype = {
     chat: '#7c3aed',
+    llm_agent: '#7c3aed',
     python_inline: '#0ea5e9',
     api_call: '#10b981',
     agent_call: '#ec4899',
