@@ -11,6 +11,7 @@ CONVERSATION_HISTORY_KEY = "conversation_history"
 
 _PREFERRED_USER_KEYS = (
     "message",
+    "messages",
     "input",
     "question",
     "query",
@@ -19,12 +20,17 @@ _PREFERRED_USER_KEYS = (
     "text",
 )
 _PREFERRED_ASSISTANT_KEYS = (
+    "final_answer",
+    "assistant_message",
+    "reply",
     "response",
     "answer",
     "output",
     "result",
     "agent_response",
     "llm_response",
+    "structured_response",
+    "messages",
     "message",
     "text",
 )
@@ -49,23 +55,17 @@ def strip_session_fields(payload: StatePayload | None) -> StatePayload:
 
 
 def normalize_conversation_history(history: Any) -> list[dict[str, str]]:
-    if not isinstance(history, list):
+    if isinstance(history, dict):
+        history = history.get("messages")
+
+    if not isinstance(history, (list, tuple)):
         return []
 
     normalized: list[dict[str, str]] = []
     for message in history:
-        if not isinstance(message, dict):
-            continue
-
-        role = str(message.get("role") or "").strip().lower()
-        if role not in {"system", "user", "assistant"}:
-            continue
-
-        content = _stringify_content(message.get("content"))
-        if not content:
-            continue
-
-        normalized.append({"role": role, "content": content})
+        normalized_message = _normalize_message(message)
+        if normalized_message:
+            normalized.append(normalized_message)
 
     return normalized
 
@@ -81,6 +81,7 @@ def build_conversation_turn(
     user_content = _payload_to_message_content(
         strip_session_fields(user_input),
         preferred_keys=_PREFERRED_USER_KEYS,
+        allowed_roles={"user"},
     )
     if user_content:
         messages.append({"role": "user", "content": user_content})
@@ -94,6 +95,7 @@ def build_conversation_turn(
     assistant_content = _payload_to_message_content(
         assistant_source,
         preferred_keys=_PREFERRED_ASSISTANT_KEYS,
+        allowed_roles={"assistant"},
     )
     if assistant_content:
         messages.append({"role": "assistant", "content": assistant_content})
@@ -121,7 +123,16 @@ def flatten_conversation_history(runs: Iterable[Any]) -> list[dict[str, str]]:
     return messages
 
 
-def _payload_to_message_content(payload: Any, *, preferred_keys: tuple[str, ...]) -> str:
+def _payload_to_message_content(
+    payload: Any,
+    *,
+    preferred_keys: tuple[str, ...],
+    allowed_roles: set[str] | None = None,
+) -> str:
+    structured_content = _extract_latest_message_content(payload, allowed_roles=allowed_roles)
+    if structured_content:
+        return structured_content
+
     if isinstance(payload, str):
         return payload.strip()
 
@@ -129,19 +140,71 @@ def _payload_to_message_content(payload: Any, *, preferred_keys: tuple[str, ...]
         for key in preferred_keys:
             if key not in payload:
                 continue
-            content = _stringify_content(payload.get(key))
+            content = _payload_to_message_content(
+                payload.get(key),
+                preferred_keys=preferred_keys,
+                allowed_roles=allowed_roles,
+            )
             if content:
                 return content
 
         if len(payload) == 1:
             only_value = next(iter(payload.values()))
-            content = _stringify_content(only_value)
+            content = _payload_to_message_content(
+                only_value,
+                preferred_keys=preferred_keys,
+                allowed_roles=allowed_roles,
+            )
             if content:
                 return content
 
         return _stringify_content(payload)
 
     return _stringify_content(payload)
+
+
+def _extract_latest_message_content(payload: Any, *, allowed_roles: set[str] | None = None) -> str:
+    messages = normalize_conversation_history(payload)
+    if not messages:
+        return ""
+
+    normalized_allowed_roles = {role for role in (allowed_roles or {"system", "user", "assistant"})}
+    for message in reversed(messages):
+        if message["role"] in normalized_allowed_roles:
+            return message["content"]
+
+    return ""
+
+
+def _normalize_message(message: Any) -> dict[str, str] | None:
+    if isinstance(message, dict):
+        role = _normalize_role(message.get("role") or message.get("type"))
+        content = _stringify_content(message.get("content"))
+        if role and content:
+            return {"role": role, "content": content}
+        return None
+
+    role = _normalize_role(
+        getattr(message, "role", None)
+        or getattr(message, "type", None)
+        or type(message).__name__
+    )
+    content = _stringify_content(getattr(message, "content", None))
+    if role and content:
+        return {"role": role, "content": content}
+
+    return None
+
+
+def _normalize_role(role: Any) -> str | None:
+    normalized = str(role or "").strip().lower()
+    if normalized in {"human", "user", "humanmessage"}:
+        return "user"
+    if normalized in {"ai", "assistant", "aimessage"}:
+        return "assistant"
+    if normalized in {"system", "systemmessage"}:
+        return "system"
+    return None
 
 
 def _stringify_content(content: Any) -> str:

@@ -26,6 +26,19 @@ class NodeDefinitionTests(unittest.TestCase):
         self.assertEqual(node_type, NodeType.llm_call)
         self.assertEqual(subtype, NodeSubtype.chat)
         self.assertEqual(config["provider"], "azure_openai")
+        self.assertEqual(config["llm_type"], NodeSubtype.chat.value)
+
+    def test_resolve_node_definition_promotes_legacy_agent_runtime_to_llm_agent(self) -> None:
+        node_type, subtype, config = resolve_node_definition(
+            "llm_call",
+            NodeSubtype.chat,
+            {"provider": "azure_openai", "llm_runtime": "agent"},
+        )
+
+        self.assertEqual(node_type, NodeType.llm_call)
+        self.assertEqual(subtype, NodeSubtype.llm_agent)
+        self.assertEqual(config["llm_type"], NodeSubtype.llm_agent.value)
+        self.assertNotIn("llm_runtime", config)
 
     def test_node_definitions_catalog_excludes_data_transform(self) -> None:
         definitions = get_node_definitions()
@@ -37,6 +50,7 @@ class NodeDefinitionTests(unittest.TestCase):
         self.assertNotIn(NodeSubtype.api_call, subtypes)
         self.assertIn(NodeSubtype.python_inline, subtypes)
         self.assertIn(NodeSubtype.agent_call, subtypes)
+        self.assertIn(NodeSubtype.llm_agent, subtypes)
         self.assertIn(NodeSubtype.api, subtypes)
         self.assertIn(NodeSubtype.rabbitmq_message, subtypes)
         self.assertIn(NodeSubtype.kafka, subtypes)
@@ -50,7 +64,7 @@ class NodeDefinitionTests(unittest.TestCase):
     def test_node_runner_factory_builds_llm_runner(self) -> None:
         runner = NodeRunnerFactory().build(
             node_type="llm_call",
-            subtype=NodeSubtype.chat,
+            subtype=NodeSubtype.llm_agent,
             config={},
         )
 

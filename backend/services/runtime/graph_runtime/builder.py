@@ -12,7 +12,6 @@ from services.runtime.edge_router import build_condition_router
 from services.runtime.graph_runtime.dtos import CompiledGraphArtifact, LangGraphBuildRequest
 from services.runtime.langfuse_tracing import end_current_runtime_span, start_current_runtime_span
 from services.runtime.nodes.factory import NodeRunnerFactory
-from services.runtime.tool_call_limit import consume_tool_call
 from type_defs import ExecutionContext, StatePayload
 
 
@@ -144,7 +143,6 @@ class LangGraphBuilder:
             tool_span_output: dict | None = None
             try:
                 if node.type != NodeType.llm_call:
-                    consume_tool_call(execution_context)
                     tool_span, tool_scope = start_current_runtime_span(
                         name="tools",
                         input_payload={"node_name": node.name},

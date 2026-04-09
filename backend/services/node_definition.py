@@ -14,6 +14,7 @@ FUNCTIONAL_NODE_SUBTYPES = {
 }
 LLM_NODE_SUBTYPES = {
     NodeSubtype.chat,
+    NodeSubtype.llm_agent,
 }
 COMMUNICATION_NODE_SUBTYPES = {
     NodeSubtype.rabbitmq_message,
@@ -105,27 +106,41 @@ def _build_default_communication_config(subtype: NodeSubtype) -> JSONMapping:
     return config
 
 
+def _build_default_llm_config(subtype: NodeSubtype) -> JSONMapping:
+    return {
+        "node_type": NodeType.llm_call.value,
+        "llm_type": subtype.value,
+        "provider": "azure_openai",
+        "model": "ai-agent-4o",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
+        "use_langfuse_prompt": False,
+        "langfuse_prompt_name": "",
+        "system_prompt": "You are a helpful assistant.",
+        "user_prompt_template": "{{input}}",
+        "temperature": 0.7,
+        "max_tokens": 1000,
+        "output_key": "llm_response",
+    }
+
+
 NODE_DEFINITIONS = (
     NodeDefinitionSpec(
         type=NodeType.llm_call,
         subtype=NodeSubtype.chat,
         category=NodeCategory.llm,
         label="LLM Call",
-        description="Call Azure OpenAI, Anthropic, or other LLMs",
+        description="Call Azure OpenAI, Anthropic, or other LLMs directly",
         show_in_frontend=True,
-        default_config={
-            "node_type": NodeType.llm_call.value,
-            "provider": "azure_openai",
-            "model": "ai-agent-4o",
-            "api_key_env_var": "AZURE_OPENAI_API_KEY",
-            "use_langfuse_prompt": False,
-            "langfuse_prompt_name": "",
-            "system_prompt": "You are a helpful assistant.",
-            "user_prompt_template": "{{input}}",
-            "temperature": 0.7,
-            "max_tokens": 1000,
-            "output_key": "llm_response",
-        },
+        default_config=_build_default_llm_config(NodeSubtype.chat),
+    ),
+    NodeDefinitionSpec(
+        type=NodeType.llm_call,
+        subtype=NodeSubtype.llm_agent,
+        category=NodeCategory.llm,
+        label="LLM Agent",
+        description="Run a LangChain agent with middleware-based model and tool control",
+        show_in_frontend=True,
+        default_config=_build_default_llm_config(NodeSubtype.llm_agent),
     ),
     NodeDefinitionSpec(
         type=NodeType.functional,
@@ -206,9 +221,15 @@ def resolve_node_definition(
     if not normalized_subtype:
         if normalized_type == NodeType.functional:
             normalized_subtype = normalize_node_subtype(normalized_config.get("function_type"))
+        elif normalized_type == NodeType.llm_call:
+            normalized_subtype = normalize_node_subtype(normalized_config.get("llm_type"))
         elif normalized_type == NodeType.communication:
             normalized_subtype = normalize_node_subtype(normalized_config.get("communication_type"))
         normalized_subtype = normalized_subtype or DEFAULT_NODE_SUBTYPE_BY_TYPE[normalized_type]
+
+    legacy_llm_runtime = str(normalized_config.get("llm_runtime") or "").strip().lower()
+    if normalized_type == NodeType.llm_call and legacy_llm_runtime == "agent":
+        normalized_subtype = NodeSubtype.llm_agent
 
     if normalized_type == NodeType.functional and normalized_subtype == NodeSubtype.api_call:
         normalized_type = NodeType.communication
@@ -232,6 +253,9 @@ def resolve_node_definition(
 
     if normalized_type == NodeType.functional:
         normalized_config["function_type"] = normalized_subtype.value
+    if normalized_type == NodeType.llm_call:
+        normalized_config["llm_type"] = normalized_subtype.value
+        normalized_config.pop("llm_runtime", None)
     if normalized_type == NodeType.communication:
         normalized_config["communication_type"] = normalized_subtype.value
 

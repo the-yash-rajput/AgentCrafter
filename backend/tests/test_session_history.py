@@ -1,12 +1,41 @@
 import unittest
+import importlib.util
+import sys
 from types import SimpleNamespace
+from pathlib import Path
+
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
+class _TemplateStub:
+    def __init__(self, template: str) -> None:
+        self.template = template
+
+    def render(self, **state) -> str:
+        rendered = self.template
+        for key, value in state.items():
+            rendered = rendered.replace(f"{{{{{key}}}}}", str(value))
+        return rendered
+
+
+sys.modules.setdefault("jinja2", SimpleNamespace(Template=_TemplateStub))
 
 from services.session_history import (
     build_conversation_turn,
     flatten_conversation_history,
     normalize_conversation_history,
 )
-from services.runtime.nodes.types.llm.chat import _build_chat_messages
+
+_CHAT_MODULE_PATH = BACKEND_ROOT / "services/runtime/nodes/types/llm/chat.py"
+_CHAT_MODULE_SPEC = importlib.util.spec_from_file_location(
+    "tests.session_history_chat_module",
+    _CHAT_MODULE_PATH,
+)
+chat_module = importlib.util.module_from_spec(_CHAT_MODULE_SPEC)
+assert _CHAT_MODULE_SPEC is not None and _CHAT_MODULE_SPEC.loader is not None
+_CHAT_MODULE_SPEC.loader.exec_module(chat_module)
+_build_chat_messages = chat_module._build_chat_messages
 
 
 class SessionHistoryTests(unittest.TestCase):
@@ -67,6 +96,31 @@ class SessionHistoryTests(unittest.TestCase):
             ],
         )
 
+    def test_build_conversation_turn_extracts_messages_payload_and_final_answer(self) -> None:
+        messages = build_conversation_turn(
+            {
+                "messages": [
+                    {"type": "human", "content": "First"},
+                    {"type": "ai", "content": "Old reply"},
+                    {"type": "human", "content": "Latest question"},
+                ]
+            },
+            agent_output={
+                "structured_response": {
+                    "final_answer": "Latest answer",
+                    "ticket_status": "pending",
+                }
+            },
+        )
+
+        self.assertEqual(
+            messages,
+            [
+                {"role": "user", "content": "Latest question"},
+                {"role": "assistant", "content": "Latest answer"},
+            ],
+        )
+
     def test_normalize_conversation_history_ignores_invalid_items(self) -> None:
         history = normalize_conversation_history(
             [
@@ -82,6 +136,24 @@ class SessionHistoryTests(unittest.TestCase):
             [
                 {"role": "user", "content": "Hello"},
                 {"role": "assistant", "content": '{"answer": "Hi"}'},
+            ],
+        )
+
+    def test_normalize_conversation_history_supports_langchain_style_message_roles(self) -> None:
+        history = normalize_conversation_history(
+            [
+                {"type": "human", "content": "Hello"},
+                SimpleNamespace(type="ai", content="Hi there"),
+                SimpleNamespace(type="system", content="Follow policy"),
+            ]
+        )
+
+        self.assertEqual(
+            history,
+            [
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi there"},
+                {"role": "system", "content": "Follow policy"},
             ],
         )
 

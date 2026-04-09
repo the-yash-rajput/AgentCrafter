@@ -16,8 +16,6 @@ from services.runtime.graph_runtime.builder import LangGraphBuilder
 from services.runtime.graph_runtime.dtos import GraphExecutionRequest
 from services.runtime.graph_runtime.executor import LangGraphExecutor
 from services.runtime.graph_runtime.fetcher import GraphRuntimeRepository
-from services.runtime.model_call_limit import ensure_model_call_limiter
-from services.runtime.tool_call_limit import ensure_tool_call_limiter
 from services.runtime.graph_runtime.tracing import LangGraphTraceService
 from services.runtime.graph_runtime.validator import GraphValidator
 from type_defs import ExecutionContext, StatePayload
@@ -44,8 +42,6 @@ class GraphRunner:
         conversation_history: Optional[list[dict[str, str]]] = None,
     ) -> dict:
         base_execution_context = dict(execution_context or {})
-        ensure_model_call_limiter(base_execution_context)
-        ensure_tool_call_limiter(base_execution_context)
         resolved_session_id = normalize_session_id(
             session_id if session_id is not None else base_execution_context.get(SESSION_ID_KEY)
         )
