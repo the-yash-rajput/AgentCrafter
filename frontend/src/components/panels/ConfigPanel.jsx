@@ -70,6 +70,73 @@ const Slider = ({ label, value, onChange, min = 0, max = 1, step = 0.1 }) => (
   </Field>
 )
 
+const STRUCTURED_OUTPUT_SCHEMA_PLACEHOLDER = `{
+  "title": "AgentResponse",
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string" },
+    "confidence": { "type": "number" }
+  },
+  "required": ["summary", "confidence"],
+  "additionalProperties": false
+}`
+
+const normalizeStructuredOutputSchemaText = (value) => {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (value && typeof value === 'object') {
+    try {
+      return JSON.stringify(value, null, 2)
+    } catch (_error) {
+      return ''
+    }
+  }
+  return value == null ? '' : String(value)
+}
+
+const parseStructuredOutputSchema = (value) => {
+  const schemaText = normalizeStructuredOutputSchemaText(value).trim()
+  if (!schemaText) {
+    return null
+  }
+
+  let parsed
+  try {
+    parsed = JSON.parse(schemaText)
+  } catch (error) {
+    throw new Error(`Structured output schema must be valid JSON. ${error.message}`)
+  }
+
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('Structured output schema must be a JSON object schema.')
+  }
+
+  return parsed
+}
+
+const normalizeNodeConfigForSave = (selectedNode, config) => {
+  const normalizedConfig = { ...(config || {}) }
+  delete normalizedConfig.llm_runtime
+
+  if (selectedNode?.type !== 'llmNode') {
+    return normalizedConfig
+  }
+
+  if (!normalizedConfig.structured_output_enabled) {
+    normalizedConfig.structured_output_schema = ''
+    return normalizedConfig
+  }
+
+  const parsedSchema = parseStructuredOutputSchema(normalizedConfig.structured_output_schema)
+  if (!parsedSchema) {
+    throw new Error('Structured output is enabled, but no response schema was provided.')
+  }
+
+  normalizedConfig.structured_output_schema = JSON.stringify(parsedSchema, null, 2)
+  return normalizedConfig
+}
+
 // ─── LLM Node Config ────────────────────────────────────────────────────────────
 
 const LLMNodeConfig = ({ config, onChange }) => {
@@ -90,6 +157,19 @@ const LLMNodeConfig = ({ config, onChange }) => {
   const modelLooksAnthropic = (cfg.model || '').toLowerCase().startsWith('claude')
   const selectedLangfusePrompt = (cfg.langfuse_prompt_name || '').trim()
   const llmType = cfg.llm_type || 'chat'
+  const structuredOutputSchemaText = normalizeStructuredOutputSchemaText(cfg.structured_output_schema)
+  let structuredOutputValidationError = ''
+  if (cfg.structured_output_enabled) {
+    try {
+      if (!structuredOutputSchemaText.trim()) {
+        structuredOutputValidationError = 'Provide a JSON schema to enable structured output.'
+      } else {
+        parseStructuredOutputSchema(structuredOutputSchemaText)
+      }
+    } catch (error) {
+      structuredOutputValidationError = error.message
+    }
+  }
   const langfusePromptOptions = [
     {
       value: '',
@@ -315,6 +395,47 @@ const LLMNodeConfig = ({ config, onChange }) => {
           <span style={{ color: 'var(--text-dim)' }}>Parse JSON response</span>
         </label>
       </Section>
+
+      {llmType === 'llm_agent' && (
+        <Section title="Structured Output">
+          <label className="flex items-center gap-2 text-sm cursor-pointer mb-3">
+            <input
+              type="checkbox"
+              checked={cfg.structured_output_enabled || false}
+              onChange={e => set('structured_output_enabled', e.target.checked)}
+              className="accent-indigo-500"
+            />
+            <span style={{ color: 'var(--text-dim)' }}>Enforce a custom response structure</span>
+          </label>
+
+          {cfg.structured_output_enabled && (
+            <>
+              <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+                Provide a JSON Schema object. The backend passes it to <code className="text-indigo-400">create_agent(response_format=...)</code> and stores the structured response under the output key.
+              </p>
+              <Field label="Response Schema (JSON Schema)">
+                <textarea
+                  value={structuredOutputSchemaText}
+                  onChange={e => set('structured_output_schema', e.target.value)}
+                  rows={12}
+                  placeholder={STRUCTURED_OUTPUT_SCHEMA_PLACEHOLDER}
+                  className="w-full px-3 py-2 rounded-lg text-sm font-mono outline-none resize-y"
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+                />
+              </Field>
+              {structuredOutputValidationError ? (
+                <p className="text-xs mt-1" style={{ color: '#f59e0b' }}>
+                  {structuredOutputValidationError}
+                </p>
+              ) : (
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Use <code className="text-indigo-400">additionalProperties: false</code> if you need strict object shapes.
+                </p>
+              )}
+            </>
+          )}
+        </Section>
+      )}
     </>
   )
 }
@@ -881,13 +1002,12 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320, onDuplicateNode })
     try {
       const nodeData = selectedNode.data
       if (nodeData.id) {
-        const normalizedConfig = { ...config }
-        delete normalizedConfig.llm_runtime
+        const normalizedConfig = normalizeNodeConfigForSave(selectedNode, config)
         const nextSubtype = nodeData.type === 'functional'
           ? (normalizedConfig.function_type || 'python_inline')
           : nodeData.type === 'communication'
             ? (normalizedConfig.communication_type || 'rabbitmq_message')
-          : (normalizedConfig.llm_type || nodeData.subtype || 'chat')
+            : (normalizedConfig.llm_type || nodeData.subtype || 'chat')
         await updateNode(nodeData.id, { name, config: normalizedConfig, subtype: nextSubtype })
         updateNodeData(nodeId, { name, config: normalizedConfig, subtype: nextSubtype, label: name })
         if (name !== nodeName && agent) {

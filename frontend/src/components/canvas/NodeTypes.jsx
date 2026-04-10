@@ -66,6 +66,11 @@ const NodeMeta = ({ data, type }) => {
           <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: '#312e8133', color: '#c4b5fd' }}>
             {llmSubtype === 'llm_agent' ? 'agent' : 'chat'}
           </span>
+          {cfg.structured_output_enabled && (
+            <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: '#14532d33', color: '#86efac' }}>
+              structured
+            </span>
+          )}
           <span className="text-xs text-slate-400 truncate">{cfg.model || 'ai-agent-4o'}</span>
         </div>
         {(cfg.use_langfuse_prompt && cfg.langfuse_prompt_name) ? (

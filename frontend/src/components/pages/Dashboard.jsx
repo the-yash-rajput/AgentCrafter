@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Edit3, Trash2, Copy, Play, Clock, Activity, GitBranch, Brain, Zap, Upload, X } from 'lucide-react'
-import { getAgents, createAgent, deleteAgent, duplicateAgent, importAgent } from '../../api/client'
+import { getAgents, createAgent, deleteAgent, duplicateAgent, importAgent, updateAgent } from '../../api/client'
 import toast from 'react-hot-toast'
 
 const statusColors = {
@@ -10,7 +10,9 @@ const statusColors = {
   archived: { bg: '#f59e0b22', text: '#f59e0b', border: '#f59e0b44' },
 }
 
-const AgentCard = ({ agent, onEdit, onDelete, onDuplicate, onRun }) => {
+const STATUSES = ['draft', 'active', 'archived']
+
+const AgentCard = ({ agent, onOpen, onEditDetails, onDelete, onDuplicate }) => {
   const s = statusColors[agent.status] || statusColors.draft
   const nodeCount = (agent.nodes || []).length
   const edgeCount = (agent.edges || []).length
@@ -23,14 +25,16 @@ const AgentCard = ({ agent, onEdit, onDelete, onDuplicate, onRun }) => {
         border: '1px solid var(--border)',
         cursor: 'pointer',
       }}
-      onClick={() => onEdit(agent.id)}
+      onClick={() => onOpen(agent.id)}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 rounded-full text-xs font-mono"
-                  style={{ background: s.bg, color: s.text, border: `1px solid ${s.border}` }}>
+            <span
+              className="px-2 py-0.5 rounded-full text-xs font-mono"
+              style={{ background: s.bg, color: s.text, border: `1px solid ${s.border}` }}
+            >
               {agent.status}
             </span>
           </div>
@@ -84,18 +88,18 @@ const AgentCard = ({ agent, onEdit, onDelete, onDuplicate, onRun }) => {
       {/* Actions */}
       <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
         <button
-          onClick={() => onEdit(agent.id)}
+          onClick={() => onEditDetails(agent)}
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
           style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text-dim)' }}
         >
           <Edit3 size={11} /> Edit
         </button>
         <button
-          onClick={() => onRun(agent.id)}
+          onClick={() => onOpen(agent.id)}
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
           style={{ background: '#6366f1', color: '#fff' }}
         >
-          <Play size={11} fill="#fff" /> Run
+          <Play size={11} fill="#fff" /> Open
         </button>
         <button
           onClick={() => onDuplicate(agent.id)}
@@ -182,12 +186,105 @@ const CreateModal = ({ onClose, onCreate }) => {
   )
 }
 
+const EditDetailsModal = ({ agent, onClose, onSave }) => {
+  const [name, setName] = useState(agent.name)
+  const [desc, setDesc] = useState(agent.description || '')
+  const [status, setStatus] = useState(agent.status)
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    if (!name.trim()) { toast.error('Name required'); return }
+    setSaving(true)
+    try {
+      const updated = await updateAgent(agent.id, {
+        name: name.trim(),
+        description: desc,
+        status,
+      })
+      onSave(updated)
+      onClose()
+      toast.success('Agent updated')
+    } catch (e) {
+      toast.error('Failed to update agent')
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)' }}>
+      <div className="w-[480px] rounded-2xl fade-in" style={{ background: 'var(--surface)', border: '1px solid var(--border2)' }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
+          <h2 className="text-base font-semibold text-white">Edit Agent</h2>
+          <button onClick={onClose}><X size={16} style={{ color: 'var(--text-muted)' }} /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-mono mb-1.5" style={{ color: 'var(--text-muted)' }}>Agent Name *</label>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSave()}
+              autoFocus
+              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none"
+              style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-mono mb-1.5" style={{ color: 'var(--text-muted)' }}>Description</label>
+            <textarea
+              value={desc}
+              onChange={e => setDesc(e.target.value)}
+              rows={3}
+              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none resize-none"
+              style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-mono mb-1.5" style={{ color: 'var(--text-muted)' }}>Status</label>
+            <div className="flex gap-2">
+              {STATUSES.map(st => {
+                const sc = statusColors[st]
+                const selected = st === status
+                return (
+                  <button
+                    key={st}
+                    onClick={() => setStatus(st)}
+                    className="flex-1 py-2 rounded-lg text-xs font-mono transition-all"
+                    style={{
+                      background: selected ? sc.bg : 'var(--bg)',
+                      color: selected ? sc.text : 'var(--text-muted)',
+                      border: `1px solid ${selected ? sc.border : 'var(--border2)'}`,
+                    }}
+                  >
+                    {st}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 px-6 pb-6">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm" style={{ color: 'var(--text-muted)' }}>Cancel</button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-5 py-2 rounded-lg text-sm font-semibold"
+            style={{ background: '#6366f1', color: '#fff', opacity: saving ? 0.6 : 1 }}
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export const Dashboard = () => {
   const navigate = useNavigate()
   const [agents, setAgents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
-  const [runAgentId, setRunAgentId] = useState(null)
+  const [editingAgent, setEditingAgent] = useState(null)
 
   useEffect(() => {
     loadAgents()
@@ -207,7 +304,7 @@ export const Dashboard = () => {
     if (!confirm('Delete this agent?')) return
     try {
       await deleteAgent(id)
-      setAgents(agents.filter(a => a.id !== id))
+      setAgents(prev => prev.filter(a => a.id !== id))
       toast.success('Agent deleted')
     } catch (e) {
       toast.error('Delete failed')
@@ -217,11 +314,15 @@ export const Dashboard = () => {
   const handleDuplicate = async (id) => {
     try {
       const copy = await duplicateAgent(id)
-      setAgents([copy, ...agents])
+      setAgents(prev => [copy, ...prev])
       toast.success('Agent duplicated')
     } catch (e) {
       toast.error('Duplicate failed')
     }
+  }
+
+  const handleAgentSaved = (updated) => {
+    setAgents(prev => prev.map(a => a.id === updated.id ? { ...a, ...updated } : a))
   }
 
   const handleImport = async (e) => {
@@ -231,7 +332,7 @@ export const Dashboard = () => {
       const text = await file.text()
       const data = JSON.parse(text)
       const imported = await importAgent(data)
-      setAgents([imported, ...agents])
+      setAgents(prev => [imported, ...prev])
       toast.success('Agent imported')
     } catch (e) {
       toast.error('Import failed')
@@ -311,10 +412,10 @@ export const Dashboard = () => {
                 <AgentCard
                   key={agent.id}
                   agent={agent}
-                  onEdit={(id) => navigate(`/agents/${id}/edit`)}
+                  onOpen={(id) => navigate(`/agents/${id}/edit`)}
+                  onEditDetails={(a) => setEditingAgent(a)}
                   onDelete={handleDelete}
                   onDuplicate={handleDuplicate}
-                  onRun={(id) => navigate(`/agents/${id}/edit`)}
                 />
               ))}
             </div>
@@ -325,7 +426,15 @@ export const Dashboard = () => {
       {showCreate && (
         <CreateModal
           onClose={() => setShowCreate(false)}
-          onCreate={(a) => { setAgents([a, ...agents]); navigate(`/agents/${a.id}/edit`) }}
+          onCreate={(a) => { setAgents(prev => [a, ...prev]); navigate(`/agents/${a.id}/edit`) }}
+        />
+      )}
+
+      {editingAgent && (
+        <EditDetailsModal
+          agent={editingAgent}
+          onClose={() => setEditingAgent(null)}
+          onSave={handleAgentSaved}
         />
       )}
     </div>
