@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 from functools import partial
-from typing import Optional
+from typing import Any, Optional
 
 from base.handlers.langfuse_handler import (
     get_langfuse_metadata,
@@ -40,7 +41,52 @@ def _agent_runtime_is_available() -> bool:
     return True
 
 
-def _build_runtime_agent(*, llm, system_prompt: str, node_name: Optional[str]):
+def _default_response_structure_title(node_name: Optional[str]) -> str:
+    normalized_name = "".join(
+        char if char.isalnum() else "_"
+        for char in str(node_name or "agent_response").strip()
+    ).strip("_")
+    return normalized_name or "agent_response"
+
+
+def _resolve_response_format(config: JSONMapping, *, node_name: Optional[str]) -> dict[str, Any] | None:
+    if not bool(config.get("structured_output_enabled")):
+        return None
+
+    raw_schema = config.get("structured_output_schema")
+    if raw_schema in (None, ""):
+        raise ValueError(
+            "Structured output is enabled, but no response schema was provided."
+        )
+
+    if isinstance(raw_schema, str):
+        try:
+            schema = json.loads(raw_schema)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "Structured output schema must be valid JSON. "
+                f"{exc.msg} at line {exc.lineno} column {exc.colno}."
+            ) from exc
+    elif isinstance(raw_schema, dict):
+        schema = dict(raw_schema)
+    else:
+        raise ValueError(
+            "Structured output schema must be a JSON object or a JSON-encoded object."
+        )
+
+    if not isinstance(schema, dict):
+        raise ValueError("Structured output schema must be a JSON object.")
+
+    if not str(schema.get("title") or "").strip():
+        schema = {
+            **schema,
+            "title": _default_response_structure_title(node_name),
+        }
+
+    return schema
+
+
+def _build_runtime_agent(*, llm, system_prompt: str, node_name: Optional[str], response_format=None):
     from langchain.agents import create_agent
 
     from services.runtime.nodes.types.llm.middleware import build_agent_middlewares
@@ -52,6 +98,7 @@ def _build_runtime_agent(*, llm, system_prompt: str, node_name: Optional[str]):
         debug=os.getenv("AI_AGENT_ENVIRONMENT", "LOCAL").upper() != "PRODUCTION",
         middleware=build_agent_middlewares(),
         name=node_name,
+        response_format=response_format,
     )
 
 
@@ -118,6 +165,7 @@ def _run_agent_llm_node(
     agent_span_output: dict | None = None
 
     try:
+        response_format = _resolve_response_format(config, node_name=node_name)
         agent_span, agent_scope = start_current_runtime_span(
             name="model",
             input_payload=input_messages,
@@ -126,6 +174,7 @@ def _run_agent_llm_node(
                 "provider": settings.provider,
                 "model": settings.model_name,
                 "llm_runtime": "agent",
+                "structured_output": response_format is not None,
             },
         )
 
@@ -134,6 +183,7 @@ def _run_agent_llm_node(
             llm=llm,
             system_prompt=system_prompt,
             node_name=node_name,
+            response_format=response_format,
         )
         invoke_config = _build_langfuse_invoke_config(
             state=state,
@@ -150,7 +200,9 @@ def _run_agent_llm_node(
             config=invoke_config,
         )
         content, structured_response = extract_agent_result_content(result)
-        if content is None and structured_response is not None:
+        if structured_response is not None and response_format is not None:
+            content = structured_response
+        elif content is None and structured_response is not None:
             content = structured_response
         if settings.parse_json:
             content = parse_json_content(content)

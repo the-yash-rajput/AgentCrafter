@@ -167,6 +167,153 @@ class AgentLLMRuntimeTests(unittest.TestCase):
         self.assertEqual(captured["invoke_config"]["metadata"]["agent_name"], "demo-agent")
         self.assertEqual(len(captured["invoke_payload"]["messages"]), 2)
 
+    def test_agent_llm_node_uses_structured_output_schema_when_configured(self) -> None:
+        captured: dict = {}
+        structured_response = {
+            "summary": "Agent answer",
+            "confidence": 0.98,
+        }
+
+        class FakeAzureChatOpenAI:
+            def __init__(self, **kwargs):
+                captured["llm_kwargs"] = kwargs
+
+        def fake_create_agent(**kwargs):
+            captured["create_agent_kwargs"] = kwargs
+
+            class FakeRuntimeAgent:
+                def invoke(self, payload, config=None):
+                    captured["invoke_payload"] = payload
+                    captured["invoke_config"] = config
+                    return {
+                        "messages": [
+                            HumanMessage(content="Earlier question"),
+                            AIMessage(content="This free-form answer should be ignored"),
+                        ],
+                        "structured_response": structured_response,
+                    }
+
+            return FakeRuntimeAgent()
+
+        with patch.dict(
+            os.environ,
+            {
+                "AZURE_OPENAI_API_KEY": "test-key",
+                "AZURE_OPENAI_ENDPOINT": "https://example.openai.azure.com",
+            },
+            clear=False,
+        ), patch.dict(
+            sys.modules,
+            {
+                "langchain.agents": types.SimpleNamespace(create_agent=fake_create_agent),
+                "langchain.agents.middleware": types.SimpleNamespace(
+                    ToolCallLimitMiddleware=ToolCallLimitMiddleware,
+                    ModelCallLimitMiddleware=ModelCallLimitMiddleware,
+                    wrap_tool_call=wrap_tool_call,
+                ),
+                "langchain_core.messages": types.SimpleNamespace(
+                    HumanMessage=HumanMessage,
+                    AIMessage=AIMessage,
+                    SystemMessage=SystemMessage,
+                    ToolMessage=ToolMessage,
+                ),
+                "langchain_openai": types.SimpleNamespace(
+                    AzureChatOpenAI=FakeAzureChatOpenAI
+                ),
+            },
+        ), patch.object(
+            agent_module,
+            "get_langfuse_metadata",
+            return_value={},
+        ):
+            node = build_agent_llm_node(
+                {
+                    "provider": "azure_openai",
+                    "model": "test-model",
+                    "system_prompt": "You are a helpful assistant.",
+                    "user_prompt_template": "Hello {{name}}",
+                    "output_key": "answer",
+                    "structured_output_enabled": True,
+                    "structured_output_schema": """
+                    {
+                      "title": "AgentAnswer",
+                      "type": "object",
+                      "properties": {
+                        "summary": { "type": "string" },
+                        "confidence": { "type": "number" }
+                      },
+                      "required": ["summary", "confidence"],
+                      "additionalProperties": false
+                    }
+                    """,
+                },
+                run_id="run-1",
+                node_name="chat-node",
+            )
+            result = node({"name": "Ada"})
+
+        self.assertEqual(result["answer"], structured_response)
+        self.assertEqual(
+            captured["create_agent_kwargs"]["response_format"],
+            {
+                "title": "AgentAnswer",
+                "type": "object",
+                "properties": {
+                    "summary": {"type": "string"},
+                    "confidence": {"type": "number"},
+                },
+                "required": ["summary", "confidence"],
+                "additionalProperties": False,
+            },
+        )
+
+    def test_agent_llm_node_returns_error_for_invalid_structured_output_schema(self) -> None:
+        class FakeAzureChatOpenAI:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        def fake_create_agent(**_kwargs):
+            raise AssertionError("create_agent should not be called when schema is invalid")
+
+        with patch.dict(
+            os.environ,
+            {
+                "AZURE_OPENAI_API_KEY": "test-key",
+                "AZURE_OPENAI_ENDPOINT": "https://example.openai.azure.com",
+            },
+            clear=False,
+        ), patch.dict(
+            sys.modules,
+            {
+                "langchain.agents": types.SimpleNamespace(create_agent=fake_create_agent),
+                "langchain.agents.middleware": types.SimpleNamespace(
+                    ToolCallLimitMiddleware=ToolCallLimitMiddleware,
+                    ModelCallLimitMiddleware=ModelCallLimitMiddleware,
+                    wrap_tool_call=wrap_tool_call,
+                ),
+                "langchain_openai": types.SimpleNamespace(
+                    AzureChatOpenAI=FakeAzureChatOpenAI
+                ),
+            },
+        ):
+            node = build_agent_llm_node(
+                {
+                    "provider": "azure_openai",
+                    "model": "test-model",
+                    "system_prompt": "You are a helpful assistant.",
+                    "user_prompt_template": "Hello {{name}}",
+                    "output_key": "answer",
+                    "structured_output_enabled": True,
+                    "structured_output_schema": '{"type":"object"',
+                },
+                run_id="run-1",
+                node_name="chat-node",
+            )
+            result = node({"name": "Ada"})
+
+        self.assertIsNone(result["answer"])
+        self.assertIn("Structured output schema must be valid JSON", result["_error"])
+
     def test_agent_llm_node_falls_back_to_chat_runtime_when_agent_api_is_unavailable(self) -> None:
         sentinel_runner = object()
         chat_stub = types.SimpleNamespace(
