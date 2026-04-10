@@ -23,6 +23,13 @@ const DEFAULT_NODE_HEIGHT = 110
 const LAYOUT_COLUMN_GAP = 72
 const LAYOUT_ROW_GAP = 110
 const COMPONENT_GAP = 180
+const COPY_NODE_OFFSET = 40
+
+const FRONTEND_TO_BACKEND_NODE_TYPE = {
+  llmNode: 'llm_call',
+  communicationNode: 'communication',
+  functionalNode: 'functional',
+}
 
 const getSuggestedNodeName = (nodes) => {
   const existingNames = new Set(
@@ -39,11 +46,53 @@ const getSuggestedNodeName = (nodes) => {
   return `node_${nextCounter}`
 }
 
+const getSuggestedCopyNodeName = (nodes, sourceName) => {
+  const normalizedSourceName = String(sourceName || '').trim() || 'node'
+  const copyBaseName = normalizedSourceName.replace(/_copy(?:_\d+)?$/i, '') || normalizedSourceName
+  const existingNames = new Set(
+    nodes
+      .map(node => String(node.data?.name || '').trim().toLowerCase())
+      .filter(Boolean)
+  )
+
+  const baseCopyName = `${copyBaseName}_copy`
+  if (!existingNames.has(baseCopyName.toLowerCase())) {
+    return baseCopyName
+  }
+
+  let suffix = 2
+  while (existingNames.has(`${baseCopyName}_${suffix}`.toLowerCase())) {
+    suffix += 1
+  }
+
+  return `${baseCopyName}_${suffix}`
+}
+
 const syncNodeCounter = (nodeName) => {
   const match = /^node_(\d+)$/.exec(String(nodeName || '').trim())
   if (!match) return
 
   nodeCounter = Math.max(nodeCounter, Number(match[1]) + 1)
+}
+
+const cloneNodeConfig = (config) => JSON.parse(JSON.stringify(config || {}))
+
+const getBackendNodeType = (node) => {
+  const nodeType = String(node?.data?.type || FRONTEND_TO_BACKEND_NODE_TYPE[node?.type] || 'functional').trim()
+  return nodeType === 'llm' ? 'llm_call' : nodeType
+}
+
+const getBackendNodeSubtype = (node, backendType = getBackendNodeType(node)) => {
+  const nodeData = node?.data || {}
+  const nodeConfig = nodeData.config || {}
+
+  if (backendType === 'llm_call') {
+    return nodeData.subtype || nodeConfig.llm_type || 'chat'
+  }
+  if (backendType === 'communication') {
+    return nodeData.subtype || nodeConfig.communication_type || 'rabbitmq_message'
+  }
+  return nodeData.subtype || nodeConfig.function_type || 'python_inline'
 }
 
 const getNodeSize = (node) => ({
@@ -312,6 +361,52 @@ const GraphEditorInner = () => {
       return false
     }
   }, [agentId, addNode])
+
+  const duplicateCanvasNode = useCallback(async ({ node, draftName, draftConfig } = {}) => {
+    if (!node) return false
+
+    const backendType = getBackendNodeType(node)
+    const backendSubtype = getBackendNodeSubtype(node, backendType)
+    if (!backendType || !backendSubtype) {
+      toast.error('Failed to determine node type for copy')
+      return false
+    }
+
+    const sourceName = String(draftName || node.data?.name || '').trim() || 'node'
+    const duplicatedNodeName = getSuggestedCopyNodeName(nodes, sourceName)
+    const sourcePosition = node.position || { x: 0, y: 0 }
+    const position = {
+      x: Math.round(sourcePosition.x + COPY_NODE_OFFSET),
+      y: Math.round(sourcePosition.y + COPY_NODE_OFFSET),
+    }
+
+    try {
+      const created = await createNode(agentId, {
+        name: duplicatedNodeName,
+        type: backendType,
+        subtype: backendSubtype,
+        config: cloneNodeConfig(draftConfig ?? node.data?.config),
+        position_x: position.x,
+        position_y: position.y,
+      })
+
+      const duplicatedNode = {
+        id: String(created.id),
+        type: node.type,
+        position,
+        data: { ...created, label: duplicatedNodeName },
+      }
+
+      addNode(duplicatedNode)
+      selectNode(duplicatedNode)
+      syncNodeCounter(duplicatedNodeName)
+      toast.success(`Copied ${sourceName}`)
+      return true
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to copy node')
+      return false
+    }
+  }, [addNode, agentId, nodes, selectNode])
 
   const onDrop = useCallback((event) => {
     event.preventDefault()
@@ -594,6 +689,7 @@ const GraphEditorInner = () => {
           <ConfigPanel
             panelWidth={configPanelWidth}
             onClosePanel={() => setShowConfigPanel(false)}
+            onDuplicateNode={duplicateCanvasNode}
           />
         )}
       </div>

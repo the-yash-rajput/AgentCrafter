@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Play, ChevronDown, ChevronRight, CheckCircle, XCircle, Loader } from 'lucide-react'
+import { X, Play, ChevronDown, ChevronRight, Loader } from 'lucide-react'
 import { runAgent } from '../../api/client'
 import { useGraphStore } from '../../hooks/useGraphStore'
 import toast from 'react-hot-toast'
@@ -84,6 +84,79 @@ const resolveSessionIdFromInput = (inputData, sessionField) => {
   return sessionId || undefined
 }
 
+const normalizeConversation = (messages) => (
+  Array.isArray(messages)
+    ? messages
+      .filter(message => (
+        message &&
+        typeof message === 'object' &&
+        ['user', 'assistant', 'system'].includes(message.role) &&
+        typeof message.content === 'string' &&
+        message.content.trim()
+      ))
+      .map(message => ({
+        role: message.role,
+        content: message.content.trim(),
+      }))
+    : []
+)
+
+const ConversationMessage = ({ message, index }) => {
+  const roleStyles = {
+    user: { color: '#38bdf8', label: 'User' },
+    assistant: { color: '#34d399', label: 'Assistant' },
+    system: { color: '#f59e0b', label: 'System' },
+  }
+  const roleStyle = roleStyles[message.role] || roleStyles.system
+
+  return (
+    <div
+      className="rounded-lg p-3"
+      style={{ background: 'var(--bg)', border: '1px solid var(--border2)' }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <span
+          className="px-2 py-0.5 rounded-full text-[11px] font-mono font-semibold"
+          style={{ background: `${roleStyle.color}22`, color: roleStyle.color, border: `1px solid ${roleStyle.color}44` }}
+        >
+          {roleStyle.label}
+        </span>
+        <span className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
+          #{index + 1}
+        </span>
+      </div>
+      <pre
+        className="text-xs whitespace-pre-wrap break-words"
+        style={{ color: '#e2e8f0', fontFamily: 'JetBrains Mono, monospace' }}
+      >
+        {message.content}
+      </pre>
+    </div>
+  )
+}
+
+const ConversationSection = ({ title, messages, emptyLabel }) => (
+  <div>
+    <p className="text-xs font-mono uppercase tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>
+      {title}
+    </p>
+    {messages.length > 0 ? (
+      <div className="space-y-2">
+        {messages.map((message, index) => (
+          <ConversationMessage key={`${message.role}-${index}-${message.content}`} message={message} index={index} />
+        ))}
+      </div>
+    ) : (
+      <div
+        className="rounded-lg p-3 text-xs font-mono"
+        style={{ background: 'var(--bg)', color: 'var(--text-muted)', border: '1px solid var(--border2)' }}
+      >
+        {emptyLabel}
+      </div>
+    )}
+  </div>
+)
+
 export const RunModal = ({ agent, onClose }) => {
   const [inputJson, setInputJson] = useState(JSON.stringify({}, null, 2))
   const [result, setResult] = useState(null)
@@ -91,6 +164,8 @@ export const RunModal = ({ agent, onClose }) => {
   const sessionField = getConfiguredSessionField(agent)
   const { setLatestRun } = useGraphStore()
   const displayedRunId = result?.id ?? result?.run_id ?? null
+  const priorConversation = normalizeConversation(result?.conversation_history)
+  const currentTurn = normalizeConversation(result?.conversation_turn)
 
   const handleRun = async () => {
     let inputData = {}
@@ -125,11 +200,6 @@ export const RunModal = ({ agent, onClose }) => {
     }
 
     const derivedSessionId = resolveSessionIdFromInput(runPayload.input_data, sessionField)
-    // if (sessionField && !runPayload.session_id && !derivedSessionId) {
-    //   toast.error(`Selected session field "${sessionField}" is missing or not a simple value`)
-    //   return
-    // }
-
     if (!runPayload.session_id && derivedSessionId) {
       runPayload = { ...runPayload, session_id: derivedSessionId }
     }
@@ -260,6 +330,19 @@ export const RunModal = ({ agent, onClose }) => {
                        style={{ background: 'var(--bg)', color: '#a7f3d0', fontFamily: 'JetBrains Mono, monospace', border: '1px solid var(--border2)' }}>
                     {JSON.stringify(result.output_data, null, 2)}
                   </pre>
+                </div>
+
+                <div className="px-5 pb-5 space-y-5">
+                  <ConversationSection
+                    title="Previous Conversation Sent To Agent"
+                    messages={priorConversation}
+                    emptyLabel="No prior conversation was attached to this run."
+                  />
+                  <ConversationSection
+                    title="Current Stored Turn"
+                    messages={currentTurn}
+                    emptyLabel="This run did not store a conversational turn."
+                  />
                 </div>
 
                 {/* Snapshots */}

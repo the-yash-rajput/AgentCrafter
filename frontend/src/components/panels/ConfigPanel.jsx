@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Trash2, Brain, Zap, ChevronDown, ChevronRight, Flag, LogOut, RadioTower } from 'lucide-react'
+import { X, Trash2, Brain, Zap, ChevronDown, ChevronRight, Flag, LogOut, RadioTower, Copy } from 'lucide-react'
 import { useGraphStore } from '../../hooks/useGraphStore'
 import { updateNode, deleteNode, updateAgent, updateEdge, deleteEdge, getAgents, getLangfusePrompts, getNodeDefinitions } from '../../api/client'
 import toast from 'react-hot-toast'
@@ -807,11 +807,12 @@ const EdgeConfigPanel = ({ edge, onClose }) => {
 
 // ─── Main Config Panel ─────────────────────────────────────────────────────────
 
-export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
+export const ConfigPanel = ({ onClosePanel, panelWidth = 320, onDuplicateNode }) => {
   const { selectedNode, selectedEdge, clearSelection, agent, edges, updateNodeData, removeNode, setAgent } = useGraphStore()
   const [config, setConfig] = useState({})
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
 
   useEffect(() => {
     if (selectedNode) {
@@ -935,6 +936,21 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
     } catch (e) { toast.error(e.response?.data?.detail || 'Failed') }
   }
 
+  const handleDuplicate = async () => {
+    if (!onDuplicateNode) return
+
+    setDuplicating(true)
+    try {
+      await onDuplicateNode({
+        node: selectedNode,
+        draftName: name,
+        draftConfig: config,
+      })
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   return (
     <div
       className="flex flex-col h-full"
@@ -995,6 +1011,19 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
           }}
         >
           <LogOut size={10} /> Exit
+        </button>
+        <button
+          onClick={handleDuplicate}
+          disabled={duplicating || saving}
+          title="Create a copy of this node"
+          className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:opacity-80 disabled:opacity-50"
+          style={{
+            background: 'var(--surface2)',
+            color: 'var(--text-muted)',
+            border: '1px solid var(--border2)',
+          }}
+        >
+          <Copy size={10} /> {duplicating ? 'Copying...' : 'Copy'}
         </button>
       </div>
 
