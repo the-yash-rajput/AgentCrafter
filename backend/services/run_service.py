@@ -33,7 +33,7 @@ class RunService:
         session_field = get_state_schema_session_key(agent.state_schema)
         derived_session_id = effective_input.get(session_field) if session_field else None
         session_id = normalize_session_id(payload.session_id or derived_session_id)
-        conversation_history = self._get_session_conversation(agent_id, session_id)
+        conversation_history = self._get_session_conversation(session_id)
         runtime_input = dict(payload.input_data or {})
         execution_context = {
             SESSION_ID_KEY: session_id,
@@ -88,13 +88,13 @@ class RunService:
             raise NotFoundError("Agent not found")
         return agent
 
-    def _get_session_conversation(self, agent_id: int, session_id: str | None) -> list[dict[str, str]]:
+    def _get_session_conversation(self, session_id: str | None) -> list[dict[str, str]]:
         if not session_id:
             return []
 
         prior_runs = (
             self.db.query(Run)
-            .filter(Run.agent_id == agent_id, Run.session_id == session_id)
+            .filter(Run.session_id == session_id, Run.completed_at.isnot(None))
             .order_by(Run.started_at.desc(), Run.id.desc())
             .limit(self.session_history_limit)
             .all()

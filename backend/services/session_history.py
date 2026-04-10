@@ -82,6 +82,7 @@ def build_conversation_turn(
         strip_session_fields(user_input),
         preferred_keys=_PREFERRED_USER_KEYS,
         allowed_roles={"user"},
+        allow_structured_fallback=False,
     )
     if user_content:
         messages.append({"role": "user", "content": user_content})
@@ -96,6 +97,7 @@ def build_conversation_turn(
         assistant_source,
         preferred_keys=_PREFERRED_ASSISTANT_KEYS,
         allowed_roles={"assistant"},
+        allow_structured_fallback=False,
     )
     if assistant_content:
         messages.append({"role": "assistant", "content": assistant_content})
@@ -128,6 +130,7 @@ def _payload_to_message_content(
     *,
     preferred_keys: tuple[str, ...],
     allowed_roles: set[str] | None = None,
+    allow_structured_fallback: bool = True,
 ) -> str:
     structured_content = _extract_latest_message_content(payload, allowed_roles=allowed_roles)
     if structured_content:
@@ -144,6 +147,7 @@ def _payload_to_message_content(
                 payload.get(key),
                 preferred_keys=preferred_keys,
                 allowed_roles=allowed_roles,
+                allow_structured_fallback=allow_structured_fallback,
             )
             if content:
                 return content
@@ -154,11 +158,18 @@ def _payload_to_message_content(
                 only_value,
                 preferred_keys=preferred_keys,
                 allowed_roles=allowed_roles,
+                allow_structured_fallback=allow_structured_fallback,
             )
             if content:
                 return content
 
+        if not allow_structured_fallback:
+            return ""
+
         return _stringify_content(payload)
+
+    if isinstance(payload, (list, tuple)) and not allow_structured_fallback:
+        return ""
 
     return _stringify_content(payload)
 

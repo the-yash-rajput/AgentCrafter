@@ -157,6 +157,23 @@ class SessionHistoryTests(unittest.TestCase):
             ],
         )
 
+    def test_build_conversation_turn_skips_non_conversational_state_payloads(self) -> None:
+        messages = build_conversation_turn(
+            {
+                "customer_id": "cus_123",
+                "ticket_status": "open",
+                "conversation_history": [{"role": "user", "content": "old"}],
+            },
+            agent_output={"answer": "Working on it."},
+        )
+
+        self.assertEqual(
+            messages,
+            [
+                {"role": "assistant", "content": "Working on it."},
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
