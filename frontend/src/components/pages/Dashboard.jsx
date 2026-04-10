@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Edit3, Trash2, Copy, Play, Clock, Activity, GitBranch, Brain, Zap, Upload, X } from 'lucide-react'
+import { Plus, Edit3, Trash2, Copy, Play, Clock, GitBranch, Brain, Upload, X } from 'lucide-react'
 import { getAgents, createAgent, deleteAgent, duplicateAgent, importAgent, updateAgent } from '../../api/client'
 import toast from 'react-hot-toast'
 
@@ -61,20 +61,6 @@ const AgentCard = ({ agent, onOpen, onEditDetails, onDelete, onDuplicate }) => {
           </div>
           <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{edgeCount} edges</span>
         </div>
-        {agent.entry_node && (
-          <div className="flex items-center gap-1.5">
-            <Zap size={10} style={{ color: '#10b981' }} />
-            <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{agent.entry_node}</span>
-          </div>
-        )}
-        {Array.isArray(agent.exit_nodes) && agent.exit_nodes.length > 0 && (
-          <div className="flex items-center gap-1.5">
-            <Activity size={10} style={{ color: '#f59e0b' }} />
-            <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
-              {agent.exit_nodes.length} exit{agent.exit_nodes.length > 1 ? 's' : ''}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Date */}
