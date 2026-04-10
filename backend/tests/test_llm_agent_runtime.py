@@ -157,6 +157,7 @@ class AgentLLMRuntimeTests(unittest.TestCase):
         self.assertEqual(captured["create_agent_kwargs"]["tools"], [])
         self.assertEqual(captured["create_agent_kwargs"]["system_prompt"], "You are a helpful assistant.")
         self.assertTrue(captured["create_agent_kwargs"]["debug"])
+        self.assertEqual(captured["create_agent_kwargs"]["name"], "chat-node")
         self.assertEqual(len(captured["create_agent_kwargs"]["middleware"]), 3)
         self.assertEqual(
             [type(middleware).__name__ if not callable(middleware) else middleware.__name__ for middleware in captured["create_agent_kwargs"]["middleware"]],
