@@ -4,7 +4,7 @@ debugpy==1.8.16
 sqlalchemy==2.0.30
 alembic==1.13.1
 psycopg2-binary==2.9.9
-pydantic==2.7.1
+pydantic==2.7.4
 pydantic-settings==2.2.1
 python-dotenv==1.0.1
 langgraph==1.1.6
