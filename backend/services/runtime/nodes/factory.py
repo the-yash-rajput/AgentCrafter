@@ -44,6 +44,7 @@ class NodeRunnerFactory:
             return build_llm_node(
                 resolved_subtype,
                 resolved_config,
+                execution_context=execution_context,
                 agent_name=agent_name,
                 run_id=run_id,
                 node_name=node_name,

@@ -18,6 +18,7 @@ class NodeSubtype(str, enum.Enum):
     api_call = "api_call"
     agent_call = "agent_call"
     chat = "chat"
+    llm_agent = "llm_agent"
     rabbitmq_message = "rabbitmq_message"
     kafka = "kafka"
     api = "api"

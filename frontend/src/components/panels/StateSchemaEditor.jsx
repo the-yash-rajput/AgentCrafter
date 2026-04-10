@@ -13,11 +13,12 @@ export const StateSchemaEditor = ({ agent, onClose, onUpdate }) => {
       type: value.type || 'str',
       default: value.default ?? '',
       description: value.description || '',
+      isSessionId: Boolean(value.is_session_id),
     }))
   )
 
   const addField = () => {
-    setFields([...fields, { key: '', type: 'str', default: '', description: '' }])
+    setFields([...fields, { key: '', type: 'str', default: '', description: '', isSessionId: false }])
   }
 
   const removeField = (i) => setFields(fields.filter((_, idx) => idx !== i))
@@ -30,7 +31,12 @@ export const StateSchemaEditor = ({ agent, onClose, onUpdate }) => {
     const schema = {}
     for (const f of fields) {
       if (f.key) {
-        schema[f.key] = { type: f.type, default: f.default, description: f.description }
+        schema[f.key] = {
+          type: f.type,
+          default: f.default,
+          description: f.description,
+          is_session_id: Boolean(f.isSessionId),
+        }
       }
     }
     try {
@@ -46,7 +52,7 @@ export const StateSchemaEditor = ({ agent, onClose, onUpdate }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)' }}>
       <div
-        className="w-[680px] max-h-[80vh] flex flex-col rounded-2xl"
+        className="w-[960px] max-w-[96vw] max-h-[88vh] flex flex-col rounded-2xl"
         style={{ background: 'var(--surface)', border: '1px solid var(--border2)' }}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
@@ -62,10 +68,11 @@ export const StateSchemaEditor = ({ agent, onClose, onUpdate }) => {
         <div className="flex-1 overflow-y-auto p-6">
           {/* Header row */}
           <div className="grid grid-cols-12 gap-2 mb-2 text-xs font-mono uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>
-            <div className="col-span-3">Key Name</div>
+            <div className="col-span-2">Key Name</div>
             <div className="col-span-2">Type</div>
-            <div className="col-span-3">Default</div>
+            <div className="col-span-2">Default</div>
             <div className="col-span-3">Description</div>
+            <div className="col-span-2">Session ID</div>
             <div className="col-span-1"></div>
           </div>
 
@@ -76,7 +83,7 @@ export const StateSchemaEditor = ({ agent, onClose, onUpdate }) => {
                   value={field.key}
                   onChange={e => updateField(i, 'key', e.target.value)}
                   placeholder="key_name"
-                  className="col-span-3 px-2 py-1.5 rounded text-sm font-mono outline-none"
+                  className="col-span-2 px-2 py-1.5 rounded text-sm font-mono outline-none"
                   style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
                 />
                 <select
@@ -91,7 +98,7 @@ export const StateSchemaEditor = ({ agent, onClose, onUpdate }) => {
                   value={field.default}
                   onChange={e => updateField(i, 'default', e.target.value)}
                   placeholder="default value"
-                  className="col-span-3 px-2 py-1.5 rounded text-sm font-mono outline-none"
+                  className="col-span-2 px-2 py-1.5 rounded text-sm font-mono outline-none"
                   style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
                 />
                 <input
@@ -101,6 +108,19 @@ export const StateSchemaEditor = ({ agent, onClose, onUpdate }) => {
                   className="col-span-3 px-2 py-1.5 rounded text-sm outline-none"
                   style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
                 />
+                <label className="col-span-2 flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+                  <input
+                    type="checkbox"
+                    checked={field.isSessionId}
+                    onChange={e =>
+                      setFields(fields.map((f, idx) => ({
+                        ...f,
+                        isSessionId: idx === i ? e.target.checked : false,
+                      })))
+                    }
+                  />
+                  Use as session id
+                </label>
                 <button onClick={() => removeField(i)} className="col-span-1 flex justify-center">
                   <Trash2 size={14} style={{ color: '#ef4444' }} />
                 </button>

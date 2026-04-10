@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from contextlib import ExitStack
 from typing import Any
 
 from models import Agent, Edge, Node
@@ -11,6 +12,9 @@ from type_defs import ExecutionContext, StatePayload
 class GraphExecutionRequest:
     agent_id: int
     input_data: StatePayload = field(default_factory=dict)
+    persisted_input_data: StatePayload = field(default_factory=dict)
+    session_id: str | None = None
+    conversation_history: list[dict[str, str]] = field(default_factory=list)
     execution_context: ExecutionContext = field(default_factory=dict)
 
     def with_agent_call_stack(self, *, max_depth: int) -> "GraphExecutionRequest":
@@ -24,6 +28,9 @@ class GraphExecutionRequest:
         return GraphExecutionRequest(
             agent_id=self.agent_id,
             input_data=dict(self.input_data or {}),
+            persisted_input_data=dict(self.persisted_input_data or {}),
+            session_id=self.session_id,
+            conversation_history=list(self.conversation_history or []),
             execution_context={
                 **self.execution_context,
                 "call_stack": [*prior_call_stack, self.agent_id],
@@ -56,6 +63,9 @@ class CompiledGraphArtifact:
 class TraceSession:
     trace: Any = None
     token: Any = None
+    exit_stack: ExitStack | None = None
+    callback_handler: Any = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

@@ -2,37 +2,6 @@
   "agent": {
     "name": "Basic Demo Workflow",
     "description": "Small demo graph with one mock LLM node, functional nodes, direct edges, and conditional edges. Runs without external API keys and clearly shows both branches.",
-    "input_schema": {
-      "customer_name": {
-        "type": "string",
-        "description": "Name shown in the demo response"
-      },
-      "request_text": {
-        "type": "string",
-        "description": "Short request used by the demo flow"
-      },
-      "requires_review": {
-        "type": "boolean",
-        "description": "Set true to send the flow down the review branch"
-      }
-    },
-    "output_schema": {
-      "ack_message": {
-        "type": "string"
-      },
-      "route": {
-        "type": "string"
-      },
-      "result": {
-        "type": "string"
-      },
-      "final_message": {
-        "type": "string"
-      },
-      "final_summary": {
-        "type": "string"
-      }
-    },
     "state_schema": {
       "customer_name": {
         "type": "string",

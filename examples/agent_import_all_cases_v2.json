@@ -2,45 +2,6 @@
   "agent": {
     "name": "All Cases Import Example",
     "description": "Comprehensive import example covering LLM + functional node types and direct + conditional edges (state_key_equals, python_expression, llm_router).",
-    "input_schema": {
-      "payload": {
-        "type": "object",
-        "description": "Primary business payload"
-      },
-      "messages": {
-        "type": "array",
-        "description": "Conversation messages"
-      },
-      "decision_input": {
-        "type": "string",
-        "description": "Optional explicit decision signal"
-      },
-      "score": {
-        "type": "number",
-        "description": "Optional score for python expression routing"
-      },
-      "topic": {
-        "type": "string",
-        "description": "Optional topic to drive llm_router branch"
-      }
-    },
-    "output_schema": {
-      "final_summary": {
-        "type": "string"
-      },
-      "decision": {
-        "type": "string"
-      },
-      "department": {
-        "type": "string"
-      },
-      "route": {
-        "type": "string"
-      },
-      "api_result": {
-        "type": "object"
-      }
-    },
     "state_schema": {
       "workflow": {
         "type": "string",

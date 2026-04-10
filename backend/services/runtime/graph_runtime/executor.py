@@ -5,6 +5,7 @@ from type_defs import StatePayload
 
 
 class LangGraphExecutor:
+    
     def execute(
         self,
         compiled_graph: CompiledGraphArtifact,

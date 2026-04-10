@@ -70,10 +70,25 @@ const SnapshotItem = ({ snapshot, index }) => {
   )
 }
 
+const getConfiguredSessionField = (agent) =>
+  Object.entries(agent?.state_schema || {}).find(([, meta]) => Boolean(meta?.is_session_id))?.[0] || ''
+
+const resolveSessionIdFromInput = (inputData, sessionField) => {
+  if (!sessionField) return undefined
+  const value = inputData?.[sessionField]
+
+  if (value === null || value === undefined) return undefined
+  if (typeof value === 'object') return undefined
+
+  const sessionId = String(value).trim()
+  return sessionId || undefined
+}
+
 export const RunModal = ({ agent, onClose }) => {
   const [inputJson, setInputJson] = useState(JSON.stringify({}, null, 2))
   const [result, setResult] = useState(null)
   const [running, setRunning] = useState(false)
+  const sessionField = getConfiguredSessionField(agent)
   const { setLatestRun } = useGraphStore()
   const displayedRunId = result?.id ?? result?.run_id ?? null
 
@@ -96,19 +111,33 @@ export const RunModal = ({ agent, onClose }) => {
       return
     }
 
+    let runPayload = { input_data: inputData }
     if (
       inputData.input_data &&
       typeof inputData.input_data === 'object' &&
       !Array.isArray(inputData.input_data) &&
-      Object.keys(inputData).every(key => key === 'input_data' || key === 'name')
+      Object.keys(inputData).every(key => key === 'input_data' || key === 'name' || key === 'session_id')
     ) {
-      inputData = inputData.input_data
+      runPayload = {
+        input_data: inputData.input_data,
+        session_id: typeof inputData.session_id === 'string' ? inputData.session_id.trim() || undefined : undefined,
+      }
+    }
+
+    const derivedSessionId = resolveSessionIdFromInput(runPayload.input_data, sessionField)
+    // if (sessionField && !runPayload.session_id && !derivedSessionId) {
+    //   toast.error(`Selected session field "${sessionField}" is missing or not a simple value`)
+    //   return
+    // }
+
+    if (!runPayload.session_id && derivedSessionId) {
+      runPayload = { ...runPayload, session_id: derivedSessionId }
     }
 
     setRunning(true)
     setResult(null)
     try {
-      const run = await runAgent(agent.id, inputData)
+      const run = await runAgent(agent.id, runPayload)
       setResult(run)
       setLatestRun(run)
       if (run.status === 'success') toast.success('Run completed successfully!')
@@ -201,6 +230,11 @@ export const RunModal = ({ agent, onClose }) => {
                   {displayedRunId && (
                     <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
                       Run ID #{displayedRunId}
+                    </p>
+                  )}
+                  {result.session_id && (
+                    <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                      Session {result.session_id}
                     </p>
                   )}
                   <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>

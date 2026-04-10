@@ -22,7 +22,14 @@ def _to_serializable(value: Any):
     return str(value)
 
 
-def start_run_trace(agent_id: str, agent_name: str, run_id: str, input_data: dict):
+def start_run_trace(
+    agent_id: str,
+    agent_name: str,
+    run_id: str,
+    input_data: dict,
+    *,
+    session_id: str | None = None,
+):
     """Create a Langfuse trace for a graph run. Returns trace object or None."""
     client = _get_langfuse_client()
     if client is None:
@@ -36,15 +43,15 @@ def start_run_trace(agent_id: str, agent_name: str, run_id: str, input_data: dic
 
     try:
         return client.trace(
-            name=f"agent_run:{agent_name}",
+            name="LangGraph",
             input=_to_serializable(input_data),
-            metadata=metadata,
-            session_id=run_id,
+            metadata={**metadata, "trace_type": "langgraph"},
+            session_id=session_id or run_id,
         )
     except TypeError:
         # Older SDK compatibility.
         try:
-            return client.trace(name=f"agent_run:{agent_name}", metadata=metadata)
+            return client.trace(name="LangGraph", metadata={**metadata, "trace_type": "langgraph"})
         except Exception:
             return None
     except Exception:
@@ -123,6 +130,117 @@ def log_llm_generation(
             span = trace.span(name=name, input=_to_serializable(input_payload), metadata=_to_serializable(base_metadata))
             if hasattr(span, "end"):
                 span.end(output=_to_serializable(output_payload if output_payload is not None else {"error": error}))
+    except Exception:
+        pass
+
+
+def log_runtime_event(
+    name: str,
+    input_payload: Any = None,
+    output_payload: Any = None,
+    metadata: Optional[dict] = None,
+):
+    """Log a lightweight runtime span event under the current trace."""
+    trace = _current_trace.get()
+    if trace is None:
+        return
+
+    kwargs: Dict[str, Any] = {
+        "name": name,
+        "metadata": _to_serializable(metadata or {}),
+    }
+    if input_payload is not None:
+        kwargs["input"] = _to_serializable(input_payload)
+
+    try:
+        if hasattr(trace, "span"):
+            span = trace.span(**kwargs)
+            if hasattr(span, "end"):
+                span.end(output=_to_serializable(output_payload))
+            return
+    except Exception:
+        pass
+
+
+def start_runtime_span(
+    name: str,
+    input_payload: Any = None,
+    metadata: Optional[dict] = None,
+):
+    """Start a runtime span under the current trace and return it."""
+    trace = _current_trace.get()
+    if trace is None:
+        return None
+
+    kwargs: Dict[str, Any] = {
+        "name": name,
+        "metadata": _to_serializable(metadata or {}),
+    }
+    if input_payload is not None:
+        kwargs["input"] = _to_serializable(input_payload)
+
+    try:
+        if hasattr(trace, "span"):
+            return trace.span(**kwargs)
+    except Exception:
+        return None
+
+    return None
+
+
+def end_runtime_span(span: Any, output_payload: Any = None):
+    if span is None:
+        return
+
+    try:
+        if hasattr(span, "end"):
+            span.end(output=_to_serializable(output_payload))
+    except Exception:
+        pass
+
+
+def start_current_runtime_span(
+    name: str,
+    input_payload: Any = None,
+    metadata: Optional[dict] = None,
+):
+    """
+    Start a child observation as the current Langfuse scope when supported.
+    Returns `(observation, scope)` where `scope` is a context manager that must be exited.
+    """
+    trace = _current_trace.get()
+    if trace is None:
+        return None, None
+
+    kwargs: Dict[str, Any] = {
+        "as_type": "chain",
+        "name": name,
+        "metadata": _to_serializable(metadata or {}),
+    }
+    if input_payload is not None:
+        kwargs["input"] = _to_serializable(input_payload)
+
+    try:
+        if hasattr(trace, "start_as_current_observation"):
+            scope = trace.start_as_current_observation(**kwargs)
+            return scope.__enter__(), scope
+    except Exception:
+        return start_runtime_span(name, input_payload=input_payload, metadata=metadata), None
+
+    return start_runtime_span(name, input_payload=input_payload, metadata=metadata), None
+
+
+def end_current_runtime_span(
+    span: Any,
+    scope: Any = None,
+    output_payload: Any = None,
+):
+    end_runtime_span(span, output_payload=output_payload)
+    if scope is None:
+        return
+
+    try:
+        scope.__exit__(None, None, None)
     except Exception:
         pass
 

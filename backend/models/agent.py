@@ -24,8 +24,6 @@ class Agent(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     status = Column(SAEnum(AgentStatus, name="agent_status"), default=AgentStatus.draft, nullable=False)
-    input_schema = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
-    output_schema = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     state_schema = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     entry_node = Column(String(255), nullable=True)
     exit_nodes = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))

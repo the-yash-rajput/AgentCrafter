@@ -68,12 +68,22 @@ class GraphRuntimeRepository:
         target_agents_by_name = {name: target_id for target_id, name in target_agents_by_id.items()}
         return target_agents_by_id, target_agents_by_name
 
-    def create_run(self, agent_id: int, input_data: StatePayload) -> Run:
+    def create_run(
+        self,
+        agent_id: int,
+        input_data: StatePayload,
+        *,
+        session_id: str | None = None,
+        conversation_history: list[dict[str, str]] | None = None,
+    ) -> Run:
         run = Run(
             agent_id=agent_id,
+            session_id=session_id,
             status=RunStatus.running,
             input_data=dict(input_data or {}),
             output_data={},
+            conversation_history=list(conversation_history or []),
+            conversation_turn=[],
             state_snapshots=[],
             started_at=datetime.utcnow(),
         )
@@ -81,16 +91,32 @@ class GraphRuntimeRepository:
         self.db.commit()
         return run
 
-    def mark_run_success(self, run: Run, output_data: StatePayload, snapshots: list[dict]) -> None:
+    def mark_run_success(
+        self,
+        run: Run,
+        output_data: StatePayload,
+        snapshots: list[dict],
+        *,
+        conversation_turn: list[dict[str, str]] | None = None,
+    ) -> None:
         run.status = RunStatus.success
         run.output_data = output_data
+        run.conversation_turn = list(conversation_turn or [])
         run.state_snapshots = snapshots
         run.completed_at = datetime.utcnow()
         self.db.commit()
 
-    def mark_run_failed(self, run: Run, error: str, snapshots: list[dict]) -> None:
+    def mark_run_failed(
+        self,
+        run: Run,
+        error: str,
+        snapshots: list[dict],
+        *,
+        conversation_turn: list[dict[str, str]] | None = None,
+    ) -> None:
         run.status = RunStatus.failed
         run.error = error
+        run.conversation_turn = list(conversation_turn or [])
         run.state_snapshots = snapshots
         run.completed_at = datetime.utcnow()
         self.db.commit()

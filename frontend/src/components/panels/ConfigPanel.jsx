@@ -46,11 +46,12 @@ const Input = ({ value, onChange, placeholder, type = 'text' }) => (
   />
 )
 
-const Select = ({ value, onChange, options }) => (
+const Select = ({ value, onChange, options, disabled = false }) => (
   <select
     value={value || ''}
     onChange={e => onChange(e.target.value)}
-    className="w-full px-3 py-2 rounded-lg text-sm font-mono outline-none"
+    disabled={disabled}
+    className={`w-full px-3 py-2 rounded-lg text-sm font-mono outline-none ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
     style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
   >
     {options.map(o => (
@@ -74,6 +75,7 @@ const Slider = ({ label, value, onChange, min = 0, max = 1, step = 0.1 }) => (
 const LLMNodeConfig = ({ config, onChange }) => {
   const cfg = config || {}
   const set = (key, val) => onChange({ ...cfg, [key]: val })
+  const [llmDefinitions, setLlmDefinitions] = useState([])
   const [langfusePrompts, setLangfusePrompts] = useState([])
   const [langfusePromptsLoading, setLangfusePromptsLoading] = useState(false)
   const [langfusePromptSource, setLangfusePromptSource] = useState('')
@@ -87,6 +89,7 @@ const LLMNodeConfig = ({ config, onChange }) => {
   const providerValue = cfg.provider === 'openai' ? 'azure_openai' : (cfg.provider || 'azure_openai')
   const modelLooksAnthropic = (cfg.model || '').toLowerCase().startsWith('claude')
   const selectedLangfusePrompt = (cfg.langfuse_prompt_name || '').trim()
+  const llmType = cfg.llm_type || 'chat'
   const langfusePromptOptions = [
     {
       value: '',
@@ -132,6 +135,26 @@ const LLMNodeConfig = ({ config, onChange }) => {
   useEffect(() => {
     let isActive = true
 
+    const loadNodeDefinitions = async () => {
+      try {
+        const definitions = await getNodeDefinitions()
+        if (!isActive) return
+        setLlmDefinitions(
+          definitions.filter(definition => definition.type === 'llm_call' && definition.show_in_frontend !== false)
+        )
+      } catch (_error) {
+        if (!isActive) return
+        setLlmDefinitions([])
+      }
+    }
+
+    loadNodeDefinitions()
+    return () => { isActive = false }
+  }, [])
+
+  useEffect(() => {
+    let isActive = true
+
     const loadLangfusePrompts = async () => {
       if (!cfg.use_langfuse_prompt) {
         if (!isActive) return
@@ -168,6 +191,24 @@ const LLMNodeConfig = ({ config, onChange }) => {
 
   return (
     <>
+      <Section title="LLM Type">
+        <Field label="Type">
+          <Select
+            value={llmType}
+            onChange={v => set('llm_type', v)}
+            disabled
+            options={llmDefinitions.map(definition => ({
+              value: definition.subtype,
+              label: definition.label,
+            }))}
+          />
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            {llmType === 'llm_agent'
+              ? 'LLM Agent uses LangChain create_agent with middleware and richer Langfuse traces.'
+              : 'LLM Call invokes the model directly without the agent loop.'} Type is locked after node creation.
+          </p>
+        </Field>
+      </Section>
       <Section title="Model Settings">
         <Field label="Provider">
           <Select value={providerValue} onChange={handleProviderChange} options={[
@@ -330,11 +371,15 @@ const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
           <Select
             value={cfg.function_type}
             onChange={v => set('function_type', v)}
+            disabled
             options={functionDefinitions.map(definition => ({
               value: definition.subtype,
               label: definition.label,
             }))}
           />
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            Type is locked after node creation.
+          </p>
         </Field>
       </Section>
 
@@ -501,11 +546,15 @@ const CommunicationNodeConfig = ({ config, onChange }) => {
           <Select
             value={cfg.communication_type}
             onChange={v => set('communication_type', v)}
+            disabled
             options={communicationDefinitions.map(definition => ({
               value: definition.subtype,
               label: definition.label,
             }))}
           />
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            Type is locked after node creation.
+          </p>
         </Field>
       </Section>
 
@@ -766,7 +815,14 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
 
   useEffect(() => {
     if (selectedNode) {
-      setConfig(selectedNode.data?.config || {})
+      const rawConfig = selectedNode.data?.config || {}
+      const normalizedConfig = selectedNode.type === 'llmNode'
+        ? {
+            ...rawConfig,
+            llm_type: selectedNode.data?.subtype || rawConfig.llm_type || (rawConfig.llm_runtime === 'agent' ? 'llm_agent' : 'chat'),
+          }
+        : rawConfig
+      setConfig(normalizedConfig)
       setName(selectedNode.data?.name || selectedNode.id)
     }
   }, [selectedNode])
@@ -824,13 +880,15 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320 }) => {
     try {
       const nodeData = selectedNode.data
       if (nodeData.id) {
+        const normalizedConfig = { ...config }
+        delete normalizedConfig.llm_runtime
         const nextSubtype = nodeData.type === 'functional'
-          ? (config.function_type || 'python_inline')
+          ? (normalizedConfig.function_type || 'python_inline')
           : nodeData.type === 'communication'
-            ? (config.communication_type || 'rabbitmq_message')
-          : (nodeData.subtype || 'chat')
-        await updateNode(nodeData.id, { name, config, subtype: nextSubtype })
-        updateNodeData(nodeId, { name, config, subtype: nextSubtype, label: name })
+            ? (normalizedConfig.communication_type || 'rabbitmq_message')
+          : (normalizedConfig.llm_type || nodeData.subtype || 'chat')
+        await updateNode(nodeData.id, { name, config: normalizedConfig, subtype: nextSubtype })
+        updateNodeData(nodeId, { name, config: normalizedConfig, subtype: nextSubtype, label: name })
         if (name !== nodeName && agent) {
           const nextExitNodes = exitNodes.map(exitName => exitName === nodeName ? name : exitName)
           setAgent({

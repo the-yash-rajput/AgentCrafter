@@ -10,17 +10,22 @@ from services.exceptions import NotFoundError, ValidationError
 from services.node_definition import resolve_node_definition
 
 
+def _sanitize_agent_payload(payload: dict) -> dict:
+    sanitized = dict(payload or {})
+    sanitized.pop("input_schema", None)
+    sanitized.pop("output_schema", None)
+    return sanitized
+
+
 class AgentService:
     def __init__(self, db: Session):
         self.db = db
 
     def create_agent(self, payload: AgentCreate) -> Agent:
-        payload_data = sync_exit_fields(payload.model_dump(by_alias=False))
+        payload_data = _sanitize_agent_payload(sync_exit_fields(payload.model_dump(by_alias=False)))
         agent = Agent(
             name=payload_data["name"],
             description=payload_data.get("description"),
-            input_schema=payload_data.get("input_schema") or {},
-            output_schema=payload_data.get("output_schema") or {},
             state_schema=payload_data.get("state_schema") or {},
             entry_node=payload_data.get("entry_node"),
             exit_nodes=payload_data.get("exit_nodes") or [],
@@ -47,7 +52,7 @@ class AgentService:
 
     def update_agent(self, agent_id: int, payload: AgentUpdate) -> Agent:
         agent = self.get_agent(agent_id)
-        update_data = payload.model_dump(exclude_unset=True)
+        update_data = _sanitize_agent_payload(payload.model_dump(exclude_unset=True))
 
         if "exit_nodes" in update_data:
             sync_exit_fields(update_data)
@@ -76,8 +81,6 @@ class AgentService:
             name=f"{agent.name} (copy)",
             description=agent.description,
             status=AgentStatus.draft,
-            input_schema=agent.input_schema,
-            output_schema=agent.output_schema,
             state_schema=agent.state_schema,
             entry_node=agent.entry_node,
             exit_nodes=exit_nodes,
@@ -129,8 +132,6 @@ class AgentService:
             "agent": {
                 "name": agent.name,
                 "description": agent.description,
-                "input_schema": agent.input_schema,
-                "output_schema": agent.output_schema,
                 "state_schema": agent.state_schema,
                 "entry_node": agent.entry_node,
                 "exit_nodes": exit_nodes,
@@ -160,7 +161,7 @@ class AgentService:
         }
 
     def import_agent(self, data: dict) -> Agent:
-        agent_data = sync_exit_fields(dict(data.get("agent", {})))
+        agent_data = _sanitize_agent_payload(sync_exit_fields(dict(data.get("agent", {}))))
         new_agent = Agent(**agent_data)
         self.db.add(new_agent)
         self.db.flush()

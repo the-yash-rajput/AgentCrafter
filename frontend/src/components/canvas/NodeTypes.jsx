@@ -56,11 +56,15 @@ const NodeBase = ({ id, data, type, icon: Icon, color, glowClass, headerLabel })
 const NodeMeta = ({ data, type }) => {
   const cfg = data.config || {}
   if (type === 'llmNode') {
+    const llmSubtype = data.subtype || cfg.llm_type || 'chat'
     return (
       <div className="mt-1">
         <div className="flex items-center gap-1.5">
           <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: '#7c3aed33', color: '#a78bfa' }}>
             {cfg.provider || 'azure_openai'}
+          </span>
+          <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: '#312e8133', color: '#c4b5fd' }}>
+            {llmSubtype === 'llm_agent' ? 'agent' : 'chat'}
           </span>
           <span className="text-xs text-slate-400 truncate">{cfg.model || 'ai-agent-4o'}</span>
         </div>
@@ -103,9 +107,25 @@ const NodeMeta = ({ data, type }) => {
   )
 }
 
-export const LLMNode = (props) => (
-  <NodeBase {...props} type="llmNode" icon={Brain} color="#7c3aed" glowClass="node-llm" headerLabel="LLM Call" />
-)
+const LLM_VISUALS = {
+  chat: { icon: Brain, color: '#7c3aed', label: 'LLM Call' },
+  llm_agent: { icon: Boxes, color: '#7c3aed', label: 'LLM Agent' },
+}
+export const LLMNode = (props) => {
+  const subtype = props?.data?.subtype || props?.data?.config?.llm_type || 'chat'
+  const visual = LLM_VISUALS[subtype] || LLM_VISUALS.chat
+
+  return (
+    <NodeBase
+      {...props}
+      type="llmNode"
+      icon={visual.icon}
+      color={visual.color}
+      glowClass="node-llm"
+      headerLabel={visual.label}
+    />
+  )
+}
 
 const FUNCTION_VISUALS = {
   python_inline: { icon: Code2, color: '#0ea5e9', label: 'Python Fn' },

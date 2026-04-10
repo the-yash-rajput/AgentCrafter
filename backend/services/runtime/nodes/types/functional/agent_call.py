@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from jinja2 import Template
 from models import AgentCallInputMode, AgentCallOutputMode
+from services.session_history import CONVERSATION_HISTORY_KEY, SESSION_ID_KEY
 from type_defs import ExecutionContext, JSONMapping, NodeRunner, StatePayload
 
 
@@ -78,11 +79,32 @@ def build_agent_call_node(
         if not isinstance(nested_input, dict):
             return {**state, "_error": "Agent Call node input must resolve to a JSON object"}
 
+        nested_input = dict(nested_input)
+        resolved_session_id = state.get(SESSION_ID_KEY) or (execution_context or {}).get(SESSION_ID_KEY)
+        resolved_conversation_history = state.get(CONVERSATION_HISTORY_KEY)
+        if resolved_conversation_history is None:
+            resolved_conversation_history = (execution_context or {}).get(CONVERSATION_HISTORY_KEY)
+
+        if resolved_session_id and SESSION_ID_KEY not in nested_input:
+            nested_input[SESSION_ID_KEY] = resolved_session_id
+        if (
+            resolved_session_id
+            and CONVERSATION_HISTORY_KEY not in nested_input
+            and isinstance(resolved_conversation_history, list)
+        ):
+            nested_input[CONVERSATION_HISTORY_KEY] = list(resolved_conversation_history)
+
         try:
             result = GraphRunner(db).compile_and_run(
                 target_agent.id,
                 nested_input,
-                execution_context=execution_context,
+                execution_context={
+                    **(execution_context or {}),
+                    SESSION_ID_KEY: resolved_session_id,
+                    CONVERSATION_HISTORY_KEY: list(resolved_conversation_history or []),
+                },
+                session_id=resolved_session_id,
+                conversation_history=list(resolved_conversation_history or []),
             )
         except Exception as exc:
             return {**state, "_error": str(exc)}

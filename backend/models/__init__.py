@@ -8,10 +8,6 @@ from models.enums import (
     NodeType,
     RunStatus,
 )
-from models.agent import Agent
-from models.node import Node
-from models.edge import Edge
-from models.run import Run
 
 __all__ = [
     "AgentStatus",
@@ -27,3 +23,23 @@ __all__ = [
     "Edge",
     "Run",
 ]
+
+
+def __getattr__(name: str):
+    if name == "Agent":
+        from models.agent import Agent
+
+        return Agent
+    if name == "Node":
+        from models.node import Node
+
+        return Node
+    if name == "Edge":
+        from models.edge import Edge
+
+        return Edge
+    if name == "Run":
+        from models.run import Run
+
+        return Run
+    raise AttributeError(f"module 'models' has no attribute '{name}'")

@@ -31,12 +31,21 @@ class NodeService:
 
     def create_node(self, agent_id: int, payload: NodeCreate) -> Node:
         self._get_agent_or_404(agent_id)
+        try:
+            resolved_type, resolved_subtype, resolved_config = resolve_node_definition(
+                payload.type,
+                payload.subtype,
+                payload.config,
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
         node = Node(
             agent_id=agent_id,
             name=payload.name,
-            type=payload.type,
-            subtype=payload.subtype,
-            config=payload.config or {},
+            type=resolved_type,
+            subtype=resolved_subtype,
+            config=resolved_config,
             position_x=payload.position_x or 0.0,
             position_y=payload.position_y or 0.0,
         )
