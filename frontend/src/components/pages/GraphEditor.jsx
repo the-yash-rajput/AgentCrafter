@@ -3,12 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { PanelLeftOpen } from 'lucide-react'
 import ReactFlow, {
   Background, Controls, MiniMap, useReactFlow, ReactFlowProvider,
+  updateEdge as rfUpdateEdge,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import toast from 'react-hot-toast'
 
 import { useGraphStore } from '../../hooks/useGraphStore'
-import { getAgent, createNode, createEdge, updateNode } from '../../api/client'
+import { getAgent, createNode, createEdge, updateNode, updateEdge as apiUpdateEdge } from '../../api/client'
 import { nodeTypes } from '../canvas/NodeTypes'
 import { edgeTypes } from '../canvas/EdgeTypes'
 import { NodePalette } from '../canvas/NodePalette'
@@ -76,6 +77,10 @@ const syncNodeCounter = (nodeName) => {
 }
 
 const cloneNodeConfig = (config) => JSON.parse(JSON.stringify(config || {}))
+const DEFAULT_EDGE_CURVATURE = 0.25
+const PARALLEL_EDGE_CURVATURE_STEP = 0.18
+const DEFAULT_EDGE_INTERACTION_WIDTH = 18
+const PARALLEL_EDGE_INTERACTION_WIDTH = 10
 
 const getBackendNodeType = (node) => {
   const nodeType = String(node?.data?.type || FRONTEND_TO_BACKEND_NODE_TYPE[node?.type] || 'functional').trim()
@@ -99,6 +104,75 @@ const getNodeSize = (node) => ({
   width: node.width || node.measured?.width || DEFAULT_NODE_WIDTH,
   height: node.height || node.measured?.height || DEFAULT_NODE_HEIGHT,
 })
+
+const compareEdgeIds = (leftId, rightId) => String(leftId).localeCompare(String(rightId), undefined, {
+  numeric: true,
+  sensitivity: 'base',
+})
+
+const getParallelEdgeGroupKey = (edge) => {
+  const left = `${edge.source}:${edge.sourceHandle || ''}`
+  const right = `${edge.target}:${edge.targetHandle || ''}`
+  return left <= right ? `${left}::${right}` : `${right}::${left}`
+}
+
+const getParallelEdgeCurvature = (edge, siblingEdges) => {
+  if (siblingEdges.length <= 1) {
+    return DEFAULT_EDGE_CURVATURE
+  }
+
+  const siblingIndex = siblingEdges.findIndex(siblingEdge => siblingEdge.id === edge.id)
+  if (siblingIndex === -1) {
+    return DEFAULT_EDGE_CURVATURE
+  }
+
+  const middleIndex = (siblingEdges.length - 1) / 2
+  const offsetFromCenter = siblingIndex - middleIndex
+  if (offsetFromCenter === 0) {
+    return DEFAULT_EDGE_CURVATURE
+  }
+
+  const direction = offsetFromCenter < 0 ? -1 : 1
+  const magnitude = DEFAULT_EDGE_CURVATURE + (Math.abs(offsetFromCenter) * PARALLEL_EDGE_CURVATURE_STEP)
+  return direction * magnitude
+}
+
+const decorateEdgesForDisplay = (edges, selectedEdgeId) => {
+  const siblingGroups = new Map()
+
+  edges.forEach((edge) => {
+    const groupKey = getParallelEdgeGroupKey(edge)
+    const siblings = siblingGroups.get(groupKey) || []
+    siblings.push(edge)
+    siblingGroups.set(groupKey, siblings)
+  })
+
+  siblingGroups.forEach((siblings, groupKey) => {
+    siblingGroups.set(
+      groupKey,
+      [...siblings].sort((leftEdge, rightEdge) => compareEdgeIds(leftEdge.id, rightEdge.id)),
+    )
+  })
+
+  return edges.map((edge) => {
+    const siblingEdges = siblingGroups.get(getParallelEdgeGroupKey(edge)) || [edge]
+    const isSelected = edge.id === selectedEdgeId
+
+    return {
+      ...edge,
+      type: edge.data?.edge_type === 'conditional' ? 'conditionalEdge' : 'directEdge',
+      animated: edge.data?.edge_type === 'conditional',
+      pathOptions: {
+        ...(edge.pathOptions || {}),
+        curvature: getParallelEdgeCurvature(edge, siblingEdges),
+      },
+      interactionWidth: siblingEdges.length > 1
+        ? (isSelected ? DEFAULT_EDGE_INTERACTION_WIDTH : PARALLEL_EDGE_INTERACTION_WIDTH)
+        : DEFAULT_EDGE_INTERACTION_WIDTH,
+      zIndex: isSelected ? 10 : 0,
+    }
+  })
+}
 
 const buildComponentLayout = ({ startIds, nodeMap, forwardAdjacency, incomingAdjacency, allowedIds, startY = 0 }) => {
   const allowed = new Set(allowedIds)
@@ -283,9 +357,10 @@ const GraphEditorInner = () => {
   const { screenToFlowPosition, fitView } = useReactFlow()
 
   const {
-    agent, nodes, edges, isDirty,
+    agent, nodes, edges, selectedEdge, isDirty,
     loadGraph, onNodesChange, onEdgesChange,
-    addNode, addEdge: storeAddEdge, selectNode, selectEdge, clearSelection,
+    addNode, addEdge: storeAddEdge, updateEdgeData: storeUpdateEdgeData, setEdges,
+    selectNode, selectEdge, clearSelection,
     setAgent, setNodePositions, layoutUndoSnapshot, setLayoutUndoSnapshot, clearLayoutUndoSnapshot,
   } = useGraphStore()
 
@@ -496,6 +571,50 @@ const GraphEditorInner = () => {
     }
   }, [agentId, storeAddEdge])
 
+  // Edge reconnection — drag an edge endpoint to a new node
+  const edgeReconnectSuccessful = useRef(false)
+
+  const onEdgeUpdateStart = useCallback(() => {
+    edgeReconnectSuccessful.current = false
+  }, [])
+
+  const onEdgeUpdate = useCallback(async (oldEdge, newConnection) => {
+    edgeReconnectSuccessful.current = true
+
+    // When multiple edges overlap, only allow reconnecting the selected one
+    const { selectedEdge } = useGraphStore.getState()
+    if (selectedEdge && oldEdge.id !== selectedEdge.id) return
+
+    const newSourceId = Number(newConnection.source)
+    const newTargetId = Number(newConnection.target)
+
+    if (
+      newSourceId === oldEdge.data?.source_node_id &&
+      newTargetId === oldEdge.data?.target_node_id
+    ) return
+
+    try {
+      const updated = await apiUpdateEdge(Number(oldEdge.id), {
+        source_node_id: newSourceId,
+        target_node_id: newTargetId,
+      })
+      storeUpdateEdgeData(oldEdge.id, {
+        source_node_id: updated.source_node_id,
+        target_node_id: updated.target_node_id,
+      })
+      setEdges(eds => rfUpdateEdge(oldEdge, newConnection, eds))
+      toast.success('Edge reconnected')
+    } catch (e) {
+      // Revert visual back to original on failure
+      setEdges(eds => rfUpdateEdge(newConnection, oldEdge, eds))
+      toast.error(e.response?.data?.detail || 'Failed to reconnect edge')
+    }
+  }, [storeUpdateEdgeData, setEdges])
+
+  const onEdgeUpdateEnd = useCallback(() => {
+    // dropped on empty canvas — nothing to do, edge stays as-is
+  }, [])
+
   const onNodeClick = useCallback((_, node) => {
     setShowConfigPanel(true)
     selectNode(node)
@@ -622,6 +741,8 @@ const GraphEditorInner = () => {
     )
   }
 
+  const displayEdges = decorateEdgesForDisplay(edges, selectedEdge?.id)
+
   return (
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg)' }}>
       <TopBar
@@ -653,10 +774,14 @@ const GraphEditorInner = () => {
           )}
           <ReactFlow
             nodes={nodes}
-            edges={edges}
+            edges={displayEdges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onEdgeUpdate={onEdgeUpdate}
+            onEdgeUpdateStart={onEdgeUpdateStart}
+            onEdgeUpdateEnd={onEdgeUpdateEnd}
+            edgeUpdaterRadius={12}
             onNodeClick={onNodeClick}
             onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}

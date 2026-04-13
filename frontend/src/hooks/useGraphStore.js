@@ -164,6 +164,13 @@ export const useGraphStore = create((set, get) => ({
     }))
   },
 
+  setEdges: (updater) => {
+    set(state => ({
+      edges: typeof updater === 'function' ? updater(state.edges) : updater,
+      isDirty: true,
+    }))
+  },
+
   selectNode: (node) => set({ selectedNode: node, selectedEdge: null }),
   selectEdge: (edge) => set({ selectedEdge: edge, selectedNode: null }),
   clearSelection: () => set({ selectedNode: null, selectedEdge: null }),
