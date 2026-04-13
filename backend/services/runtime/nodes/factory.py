@@ -16,6 +16,7 @@ class NodeRunnerFactory:
         config: Optional[JSONMapping] = None,
         db=None,
         current_agent_id: Optional[int] = None,
+        current_agent_version_id: Optional[int] = None,
         execution_context: Optional[ExecutionContext] = None,
         agent_name: Optional[str] = None,
         run_id: Optional[str] = None,
@@ -35,6 +36,7 @@ class NodeRunnerFactory:
                 resolved_config,
                 db=db,
                 current_agent_id=current_agent_id,
+                current_agent_version_id=current_agent_version_id,
                 execution_context=execution_context,
             )
 

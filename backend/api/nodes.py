@@ -17,8 +17,14 @@ def list_node_definitions() -> list[NodeDefinitionResponse]:
 
 @router.post("/agents/{agent_id}/nodes", response_model=NodeResponse)
 @translate_service_errors
-def add_node(agent_id: int, payload: NodeCreate, db: Session = Depends(get_db)):
-    return NodeService(db).create_node(agent_id, payload)
+def add_node(agent_id: int, payload: NodeCreate, version_id: int | None = None, db: Session = Depends(get_db)):
+    return NodeService(db).create_node(agent_id, payload, version_id=version_id)
+
+
+@router.post("/agents/{agent_id}/versions/{version_id}/nodes", response_model=NodeResponse)
+@translate_service_errors
+def add_version_node(agent_id: int, version_id: int, payload: NodeCreate, db: Session = Depends(get_db)):
+    return NodeService(db).create_node(agent_id, payload, version_id=version_id)
 
 
 @router.put("/nodes/{node_id}", response_model=NodeResponse)

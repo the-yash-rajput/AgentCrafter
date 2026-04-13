@@ -42,6 +42,9 @@ class AgentResponse(BaseModel):
     entry_node: Optional[str]
     exit_nodes: List[str] = Field(default_factory=list)
     metadata: JSONMapping = Field(default_factory=dict, alias="metadata_")
+    versions: List["AgentVersionResponse"] = Field(default_factory=list)
+    agent_version_id: Optional[int] = None
+    version_number: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -51,6 +54,43 @@ class AgentResponse(BaseModel):
 
 
 class AgentWithGraph(AgentResponse):
+    nodes: List["NodeResponse"] = Field(default_factory=list)
+    edges: List["EdgeResponse"] = Field(default_factory=list)
+
+
+class AgentVersionCreate(BaseModel):
+    base_version_id: Optional[int] = None
+
+
+class AgentVersionUpdate(BaseModel):
+    state_schema: Optional[JSONMapping] = None
+    entry_node: Optional[str] = None
+    exit_nodes: Optional[List[str]] = None
+    metadata_: Optional[JSONMapping] = Field(default=None, alias="metadata")
+
+    class Config:
+        populate_by_name = True
+
+
+class AgentVersionResponse(BaseModel):
+    id: int
+    agent_id: int
+    version_number: int
+    base_version_id: Optional[int] = None
+    state_schema: JSONMapping
+    entry_node: Optional[str]
+    exit_nodes: List[str] = Field(default_factory=list)
+    metadata: JSONMapping = Field(default_factory=dict, alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+
+
+class AgentVersionWithGraph(AgentVersionResponse):
+    agent: AgentResponse
     nodes: List["NodeResponse"] = Field(default_factory=list)
     edges: List["EdgeResponse"] = Field(default_factory=list)
 
@@ -109,6 +149,7 @@ class NodeUpdate(BaseModel):
 class NodeResponse(BaseModel):
     id: int
     agent_id: int
+    agent_version_id: Optional[int] = None
     name: str
     type: NodeType
     subtype: NodeSubtype
@@ -142,6 +183,7 @@ class EdgeUpdate(BaseModel):
 class EdgeResponse(BaseModel):
     id: int
     agent_id: int
+    agent_version_id: Optional[int] = None
     source_node_id: int
     target_node_id: int
     edge_type: EdgeType
@@ -157,7 +199,7 @@ class EdgeResponse(BaseModel):
 
 class RunCreate(BaseModel):
     input_data: JSONMapping = Field(default_factory=dict)
-    session_id: Optional[str] = None
+    session_id: Optional[int] = None
 
     @field_validator("session_id")
     @classmethod
@@ -165,19 +207,25 @@ class RunCreate(BaseModel):
         if value is None:
             return None
 
-        normalized = str(value).strip()
-        return normalized or None
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            raise ValueError("session_id must be an integer") from None
+
+        return normalized if normalized > 0 else None
 
 
 class RunResponse(BaseModel):
     id: int
     agent_id: int
-    session_id: Optional[str]
+    agent_version_id: Optional[int] = None
+    session_id: Optional[int]
+    parent_run_id: Optional[int] = None
     status: RunStatus
     input_data: JSONMapping
     output_data: JSONMapping
-    conversation_history: Any
-    conversation_turn: Any
+    conversation_history: Any = Field(default_factory=list)
+    conversation_turn: Any = Field(default_factory=list)
     state_snapshots: Any
     error: Optional[str]
     started_at: datetime
@@ -185,6 +233,28 @@ class RunResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AgentSessionCreate(BaseModel):
+    metadata_: JSONMapping = Field(default_factory=dict, alias="metadata")
+
+    class Config:
+        populate_by_name = True
+
+
+class AgentSessionResponse(BaseModel):
+    id: int
+    agent_id: int
+    agent_version_id: int
+    conversation_history: Any = Field(default_factory=list)
+    metadata: JSONMapping = Field(default_factory=dict, alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+    last_run_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
 
 
 class NodeDefinitionResponse(BaseModel):
@@ -200,4 +270,6 @@ class NodeDefinitionResponse(BaseModel):
         from_attributes = True
 
 
+AgentResponse.model_rebuild()
 AgentWithGraph.model_rebuild()
+AgentVersionWithGraph.model_rebuild()

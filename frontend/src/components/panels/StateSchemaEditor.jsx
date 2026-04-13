@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
-import { updateAgent } from '../../api/client'
+import { updateAgentVersion } from '../../api/client'
 import toast from 'react-hot-toast'
 
 const TYPE_OPTIONS = ['str', 'int', 'float', 'bool', 'list', 'dict', 'Any']
@@ -40,8 +40,8 @@ export const StateSchemaEditor = ({ agent, onClose, onUpdate }) => {
       }
     }
     try {
-      await updateAgent(agent.id, { state_schema: schema })
-      onUpdate({ ...agent, state_schema: schema })
+      const updated = await updateAgentVersion(agent.id, agent.agent_version_id, { state_schema: schema })
+      onUpdate(updated)
       toast.success('State schema saved')
       onClose()
     } catch (e) {

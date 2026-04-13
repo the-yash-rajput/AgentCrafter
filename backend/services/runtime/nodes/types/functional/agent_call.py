@@ -14,12 +14,14 @@ def build_agent_call_node(
     *,
     db=None,
     current_agent_id: Optional[int] = None,
+    current_agent_version_id: Optional[int] = None,
     execution_context: Optional[ExecutionContext] = None,
 ) -> NodeRunner:
     agent_cfg = config.get("agent_call", {})
 
     def agent_call_node(state: StatePayload) -> StatePayload:
         target_agent_id = agent_cfg.get("target_agent_id")
+        target_agent_version_id = agent_cfg.get("target_agent_version_id")
         target_agent_name = str(agent_cfg.get("target_agent_name") or "").strip()
         input_key = str(agent_cfg.get("input_key") or "").strip()
         input_template = str(agent_cfg.get("input_template") or "").strip()
@@ -39,10 +41,11 @@ def build_agent_call_node(
         except ValueError as exc:
             return {**state, "_error": str(exc)}
 
-        from models import Agent
+        from models import Agent, AgentVersion
         from services.runtime.graph_runner import GraphRunner
 
         target_agent = None
+        target_version = None
         if target_agent_id not in (None, ""):
             try:
                 target_agent = db.query(Agent).filter(Agent.id == int(target_agent_id)).first()
@@ -59,6 +62,32 @@ def build_agent_call_node(
 
         if current_agent_id is not None and target_agent.id == current_agent_id:
             return {**state, "_error": "Agent Call node cannot target the same agent"}
+
+        if target_agent_version_id not in (None, ""):
+            try:
+                target_version = (
+                    db.query(AgentVersion)
+                    .filter(
+                        AgentVersion.agent_id == target_agent.id,
+                        AgentVersion.id == int(target_agent_version_id),
+                    )
+                    .first()
+                )
+            except (TypeError, ValueError):
+                return {**state, "_error": f"Invalid target agent version ID '{target_agent_version_id}'"}
+        else:
+            target_version = (
+                db.query(AgentVersion)
+                .filter(AgentVersion.agent_id == target_agent.id)
+                .order_by(AgentVersion.version_number.desc())
+                .first()
+            )
+
+        if not target_version:
+            return {**state, "_error": f"Target agent version not found for '{target_agent.name}'"}
+
+        if current_agent_version_id is not None and target_version.id == current_agent_version_id:
+            return {**state, "_error": "Agent Call node cannot target the same agent version"}
 
         nested_input: Any
         if input_mode == AgentCallInputMode.state_key:
@@ -98,6 +127,7 @@ def build_agent_call_node(
             result = GraphRunner(db).compile_and_run(
                 target_agent.id,
                 nested_input,
+                agent_version_id=target_version.id,
                 execution_context={
                     **(execution_context or {}),
                     SESSION_ID_KEY: resolved_session_id,
@@ -124,6 +154,8 @@ def build_agent_call_node(
                 f"{output_key}_meta": {
                     "target_agent_id": target_agent.id,
                     "target_agent_name": target_agent.name,
+                    "target_agent_version_id": target_version.id,
+                    "target_agent_version_number": target_version.version_number,
                     "run_id": result.get("run_id"),
                     "status": result.get("status"),
                 },

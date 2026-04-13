@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from models import Agent, Node
+from models import Agent, AgentVersion, Node
 from schemas.schemas import NodeCreate, NodeDefinitionResponse, NodeUpdate
 from services.agent_exit_nodes import get_agent_exit_nodes
 from services.exceptions import NotFoundError, ValidationError
@@ -29,8 +29,8 @@ class NodeService:
             for definition in get_node_definitions()
         ]
 
-    def create_node(self, agent_id: int, payload: NodeCreate) -> Node:
-        self._get_agent_or_404(agent_id)
+    def create_node(self, agent_id: int, payload: NodeCreate, *, version_id: int | None = None) -> Node:
+        version = self._resolve_agent_version(agent_id, version_id)
         try:
             resolved_type, resolved_subtype, resolved_config = resolve_node_definition(
                 payload.type,
@@ -42,6 +42,7 @@ class NodeService:
 
         node = Node(
             agent_id=agent_id,
+            agent_version_id=version.id,
             name=payload.name,
             type=resolved_type,
             subtype=resolved_subtype,
@@ -79,13 +80,13 @@ class NodeService:
 
         renamed = "name" in update_data and update_data["name"] != previous_name
         if renamed:
-            agent = self.db.query(Agent).filter(Agent.id == node.agent_id).first()
-            if agent:
-                if agent.entry_node == previous_name:
-                    agent.entry_node = node.name
-                agent.exit_nodes = [
+            version = self._get_node_version(node)
+            if version:
+                if version.entry_node == previous_name:
+                    version.entry_node = node.name
+                version.exit_nodes = [
                     node.name if exit_name == previous_name else exit_name
-                    for exit_name in get_agent_exit_nodes(agent)
+                    for exit_name in get_agent_exit_nodes(version)
                 ]
 
         self._commit_or_raise("Invalid node update")
@@ -94,12 +95,12 @@ class NodeService:
 
     def delete_node(self, node_id: int) -> dict[str, str]:
         node = self._get_node_or_404(node_id)
-        agent = self.db.query(Agent).filter(Agent.id == node.agent_id).first()
-        if agent:
-            if agent.entry_node == node.name:
-                agent.entry_node = None
-            agent.exit_nodes = [
-                exit_name for exit_name in get_agent_exit_nodes(agent) if exit_name != node.name
+        version = self._get_node_version(node)
+        if version:
+            if version.entry_node == node.name:
+                version.entry_node = None
+            version.exit_nodes = [
+                exit_name for exit_name in get_agent_exit_nodes(version) if exit_name != node.name
             ]
 
         self.db.delete(node)
@@ -111,6 +112,26 @@ class NodeService:
         if not agent:
             raise NotFoundError("Agent not found")
         return agent
+
+    def _resolve_agent_version(self, agent_id: int, version_id: int | None) -> AgentVersion:
+        self._get_agent_or_404(agent_id)
+        query = self.db.query(AgentVersion).filter(AgentVersion.agent_id == agent_id)
+        if version_id is not None:
+            version = query.filter(AgentVersion.id == version_id).first()
+        else:
+            version = query.order_by(AgentVersion.version_number.desc()).first()
+        if not version:
+            raise NotFoundError("Agent version not found")
+        return version
+
+    def _get_node_version(self, node: Node) -> AgentVersion | None:
+        if node.agent_version_id is None:
+            return None
+        return (
+            self.db.query(AgentVersion)
+            .filter(AgentVersion.id == node.agent_version_id, AgentVersion.agent_id == node.agent_id)
+            .first()
+        )
 
     def _get_node_or_404(self, node_id: int) -> Node:
         node = self.db.query(Node).filter(Node.id == node_id).first()

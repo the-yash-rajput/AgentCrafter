@@ -31,7 +31,7 @@ def get_db():
 
 
 def create_tables():
-    from models import Agent, Node, Edge, Run  # noqa
+    from models import Agent, AgentSession, AgentVersion, Node, Edge, Run  # noqa
     Base.metadata.create_all(bind=engine)
 
 

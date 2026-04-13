@@ -4,36 +4,39 @@ from dataclasses import dataclass, field
 from contextlib import ExitStack
 from typing import Any
 
-from models import Agent, Edge, Node
+from models import Agent, AgentVersion, Edge, Node
 from type_defs import ExecutionContext, StatePayload
 
 
 @dataclass(slots=True)
 class GraphExecutionRequest:
     agent_id: int
+    agent_version_id: int | None = None
     input_data: StatePayload = field(default_factory=dict)
     persisted_input_data: StatePayload = field(default_factory=dict)
-    session_id: str | None = None
+    session_id: int | None = None
     conversation_history: list[dict[str, str]] = field(default_factory=list)
     execution_context: ExecutionContext = field(default_factory=dict)
 
     def with_agent_call_stack(self, *, max_depth: int) -> "GraphExecutionRequest":
         prior_call_stack = list(self.execution_context.get("call_stack") or [])
-        if self.agent_id in prior_call_stack:
-            cycle = prior_call_stack + [self.agent_id]
+        call_stack_key = self.agent_version_id or self.agent_id
+        if call_stack_key in prior_call_stack:
+            cycle = prior_call_stack + [call_stack_key]
             raise ValueError(f"Recursive agent call detected: {' -> '.join(map(str, cycle))}")
         if len(prior_call_stack) >= max_depth:
             raise ValueError(f"Nested agent call depth exceeded limit of {max_depth}")
 
         return GraphExecutionRequest(
             agent_id=self.agent_id,
+            agent_version_id=self.agent_version_id,
             input_data=dict(self.input_data or {}),
             persisted_input_data=dict(self.persisted_input_data or {}),
             session_id=self.session_id,
             conversation_history=list(self.conversation_history or []),
             execution_context={
                 **self.execution_context,
-                "call_stack": [*prior_call_stack, self.agent_id],
+                "call_stack": [*prior_call_stack, call_stack_key],
             },
         )
 
@@ -41,6 +44,7 @@ class GraphExecutionRequest:
 @dataclass(slots=True)
 class GraphFetchResult:
     agent: Agent
+    version: AgentVersion
     nodes: list[Node]
     edges: list[Edge]
 

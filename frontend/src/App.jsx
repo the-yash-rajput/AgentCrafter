@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { Dashboard } from './components/pages/Dashboard'
 import { GraphEditor } from './components/pages/GraphEditor'
+import { ChatSession } from './components/pages/ChatSession'
 
 export default function App() {
   return (
@@ -23,6 +24,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/agents/:agentId/edit" element={<GraphEditor />} />
+        <Route path="/agents/:agentId/version/:versionId/edit" element={<GraphEditor />} />
+        <Route path="/agents/:agentId/version/:versionId/session/:sessionId" element={<ChatSession />} />
       </Routes>
     </BrowserRouter>
   )

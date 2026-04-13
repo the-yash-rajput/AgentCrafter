@@ -11,8 +11,14 @@ router = APIRouter(tags=["edges"])
 
 @router.post("/agents/{agent_id}/edges", response_model=EdgeResponse)
 @translate_service_errors
-def add_edge(agent_id: int, payload: EdgeCreate, db: Session = Depends(get_db)):
-    return EdgeService(db).create_edge(agent_id, payload)
+def add_edge(agent_id: int, payload: EdgeCreate, version_id: int | None = None, db: Session = Depends(get_db)):
+    return EdgeService(db).create_edge(agent_id, payload, version_id=version_id)
+
+
+@router.post("/agents/{agent_id}/versions/{version_id}/edges", response_model=EdgeResponse)
+@translate_service_errors
+def add_version_edge(agent_id: int, version_id: int, payload: EdgeCreate, db: Session = Depends(get_db)):
+    return EdgeService(db).create_edge(agent_id, payload, version_id=version_id)
 
 
 @router.put("/edges/{edge_id}", response_model=EdgeResponse)

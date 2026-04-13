@@ -24,6 +24,7 @@ class LangGraphBuilder:
     def compile(self, request: LangGraphBuildRequest) -> CompiledGraphArtifact:
         graph_data = request.graph_data
         agent = graph_data.agent
+        version = graph_data.version
         nodes = graph_data.nodes
         edges = graph_data.edges
 
@@ -39,6 +40,7 @@ class LangGraphBuilder:
                     config=node.config or {},
                     db=self.db,
                     current_agent_id=agent.id,
+                    current_agent_version_id=version.id,
                     execution_context=request.execution_context,
                     agent_name=agent.name,
                     run_id=request.run_id,
@@ -62,7 +64,7 @@ class LangGraphBuilder:
         if not node_map:
             raise ValueError("Agent has no executable nodes configured")
 
-        entry_node = agent.entry_node if agent.entry_node in node_map else next(iter(node_map))
+        entry_node = version.entry_node if version.entry_node in node_map else next(iter(node_map))
         workflow.set_entry_point(entry_node)
 
         edges_by_source: Dict[str, list[tuple[str, Edge]]] = defaultdict(list)
@@ -97,7 +99,7 @@ class LangGraphBuilder:
             for target_name, _edge in direct_edges:
                 workflow.add_edge(source, target_name)
 
-        configured_exit_nodes = get_agent_exit_nodes(agent)
+        configured_exit_nodes = get_agent_exit_nodes(version)
         invalid_exit_nodes = [node_name for node_name in configured_exit_nodes if node_name not in node_map]
         if invalid_exit_nodes:
             raise ValueError(f"Exit nodes do not exist: {', '.join(invalid_exit_nodes)}")

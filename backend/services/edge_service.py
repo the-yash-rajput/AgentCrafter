@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from models import Agent, Edge, Node
+from models import Agent, AgentVersion, Edge, Node
 from schemas.schemas import EdgeCreate, EdgeUpdate
 from services.agent_exit_nodes import get_agent_exit_nodes
 from services.exceptions import NotFoundError, ValidationError
@@ -13,19 +13,20 @@ class EdgeService:
     def __init__(self, db: Session):
         self.db = db
 
-    def create_edge(self, agent_id: int, payload: EdgeCreate) -> Edge:
-        agent = self._get_agent_or_404(agent_id)
-        source_node = self._get_agent_node(agent_id, payload.source_node_id)
-        target_node = self._get_agent_node(agent_id, payload.target_node_id)
+    def create_edge(self, agent_id: int, payload: EdgeCreate, *, version_id: int | None = None) -> Edge:
+        version = self._resolve_agent_version(agent_id, version_id)
+        source_node = self._get_agent_node(agent_id, version.id, payload.source_node_id)
+        target_node = self._get_agent_node(agent_id, version.id, payload.target_node_id)
         if not source_node or not target_node:
             raise ValidationError(
-                "source_node_id and target_node_id must reference existing node IDs in this agent"
+                "source_node_id and target_node_id must reference existing node IDs in this agent version"
             )
-        if source_node.name in get_agent_exit_nodes(agent):
+        if source_node.name in get_agent_exit_nodes(version):
             raise ValidationError(f"Cannot add outgoing edges from exit node '{source_node.name}'")
 
         edge = Edge(
             agent_id=agent_id,
+            agent_version_id=version.id,
             source_node_id=payload.source_node_id,
             target_node_id=payload.target_node_id,
             edge_type=payload.edge_type,
@@ -40,19 +41,19 @@ class EdgeService:
     def update_edge(self, edge_id: int, payload: EdgeUpdate) -> Edge:
         edge = self._get_edge_or_404(edge_id)
         update_data = payload.model_dump(exclude_unset=True)
-        agent = self.db.query(Agent).filter(Agent.id == edge.agent_id).first()
+        version = self._get_edge_version(edge)
 
         if "source_node_id" in update_data:
-            source = self._get_agent_node(edge.agent_id, update_data["source_node_id"])
+            source = self._get_agent_node(edge.agent_id, edge.agent_version_id, update_data["source_node_id"])
             if not source:
-                raise ValidationError("Invalid source_node_id for this agent")
-            if agent and source.name in get_agent_exit_nodes(agent):
+                raise ValidationError("Invalid source_node_id for this agent version")
+            if version and source.name in get_agent_exit_nodes(version):
                 raise ValidationError(f"Cannot add outgoing edges from exit node '{source.name}'")
 
         if "target_node_id" in update_data:
-            target = self._get_agent_node(edge.agent_id, update_data["target_node_id"])
+            target = self._get_agent_node(edge.agent_id, edge.agent_version_id, update_data["target_node_id"])
             if not target:
-                raise ValidationError("Invalid target_node_id for this agent")
+                raise ValidationError("Invalid target_node_id for this agent version")
 
         for key, value in update_data.items():
             setattr(edge, key, value)
@@ -73,14 +74,37 @@ class EdgeService:
             raise NotFoundError("Agent not found")
         return agent
 
+    def _resolve_agent_version(self, agent_id: int, version_id: int | None) -> AgentVersion:
+        self._get_agent_or_404(agent_id)
+        query = self.db.query(AgentVersion).filter(AgentVersion.agent_id == agent_id)
+        if version_id is not None:
+            version = query.filter(AgentVersion.id == version_id).first()
+        else:
+            version = query.order_by(AgentVersion.version_number.desc()).first()
+        if not version:
+            raise NotFoundError("Agent version not found")
+        return version
+
+    def _get_edge_version(self, edge: Edge) -> AgentVersion | None:
+        if edge.agent_version_id is None:
+            return None
+        return (
+            self.db.query(AgentVersion)
+            .filter(AgentVersion.id == edge.agent_version_id, AgentVersion.agent_id == edge.agent_id)
+            .first()
+        )
+
     def _get_edge_or_404(self, edge_id: int) -> Edge:
         edge = self.db.query(Edge).filter(Edge.id == edge_id).first()
         if not edge:
             raise NotFoundError("Edge not found")
         return edge
 
-    def _get_agent_node(self, agent_id: int, node_id: int) -> Node | None:
-        return self.db.query(Node).filter(Node.agent_id == agent_id, Node.id == node_id).first()
+    def _get_agent_node(self, agent_id: int, agent_version_id: int | None, node_id: int) -> Node | None:
+        query = self.db.query(Node).filter(Node.agent_id == agent_id, Node.id == node_id)
+        if agent_version_id is not None:
+            query = query.filter(Node.agent_version_id == agent_version_id)
+        return query.first()
 
     def _commit_or_raise(self, prefix: str) -> None:
         try:

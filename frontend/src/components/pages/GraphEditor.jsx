@@ -9,13 +9,21 @@ import 'reactflow/dist/style.css'
 import toast from 'react-hot-toast'
 
 import { useGraphStore } from '../../hooks/useGraphStore'
-import { getAgent, createNode, createEdge, updateNode, updateEdge as apiUpdateEdge } from '../../api/client'
+import {
+  createAgentSession,
+  createAgentVersion,
+  getAgent,
+  getAgentByVersionRef,
+  createNode,
+  createEdge,
+  updateNode,
+  updateEdge as apiUpdateEdge,
+} from '../../api/client'
 import { nodeTypes } from '../canvas/NodeTypes'
 import { edgeTypes } from '../canvas/EdgeTypes'
 import { NodePalette } from '../canvas/NodePalette'
 import { ConfigPanel } from '../panels/ConfigPanel'
 import { StateSchemaEditor } from '../panels/StateSchemaEditor'
-import { RunModal } from '../panels/RunModal'
 import { TopBar } from './TopBar'
 
 let nodeCounter = 1
@@ -351,7 +359,7 @@ const createAutoLayout = ({ nodes, edges, entryNodeId }) => {
 }
 
 const GraphEditorInner = () => {
-  const { agentId } = useParams()
+  const { agentId, versionId } = useParams()
   const navigate = useNavigate()
   const reactFlowWrapper = useRef(null)
   const { screenToFlowPosition, fitView } = useReactFlow()
@@ -366,7 +374,6 @@ const GraphEditorInner = () => {
 
   const [loading, setLoading] = useState(true)
   const [showSchemaEditor, setShowSchemaEditor] = useState(false)
-  const [showRunModal, setShowRunModal] = useState(false)
   const [showNodePalette, setShowNodePalette] = useState(true)
   const [showConfigPanel, setShowConfigPanel] = useState(true)
   const [configPanelWidth, setConfigPanelWidth] = useState(320)
@@ -378,7 +385,18 @@ const GraphEditorInner = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await getAgent(agentId)
+        const data = versionId
+          ? await getAgentByVersionRef(agentId, versionId)
+          : await getAgent(agentId)
+
+        if (!versionId && data.agent_version_id) {
+          navigate(`/agents/${agentId}/version/${data.version_number}/edit`, { replace: true })
+          return
+        }
+        if (versionId && String(versionId) !== String(data.version_number)) {
+          navigate(`/agents/${agentId}/version/${data.version_number}/edit`, { replace: true })
+          return
+        }
         loadGraph(data)
       } catch (e) {
         toast.error('Failed to load agent')
@@ -387,7 +405,7 @@ const GraphEditorInner = () => {
       setLoading(false)
     }
     load()
-  }, [agentId])
+  }, [agentId, versionId])
 
   // Save node positions on drag stop
   const onNodeDragStop = useCallback(async (_, node) => {
@@ -421,7 +439,7 @@ const GraphEditorInner = () => {
         config: defaultConfig,
         position_x: position.x,
         position_y: position.y,
-      })
+      }, agent?.agent_version_id)
 
       addNode({
         id: String(created.id),
@@ -435,7 +453,7 @@ const GraphEditorInner = () => {
       toast.error('Failed to create node')
       return false
     }
-  }, [agentId, addNode])
+  }, [agent?.agent_version_id, agentId, addNode])
 
   const duplicateCanvasNode = useCallback(async ({ node, draftName, draftConfig } = {}) => {
     if (!node) return false
@@ -463,7 +481,7 @@ const GraphEditorInner = () => {
         config: cloneNodeConfig(draftConfig ?? node.data?.config),
         position_x: position.x,
         position_y: position.y,
-      })
+      }, agent?.agent_version_id)
 
       const duplicatedNode = {
         id: String(created.id),
@@ -481,7 +499,7 @@ const GraphEditorInner = () => {
       toast.error(e.response?.data?.detail || 'Failed to copy node')
       return false
     }
-  }, [addNode, agentId, nodes, selectNode])
+  }, [addNode, agent?.agent_version_id, agentId, nodes, selectNode])
 
   const onDrop = useCallback((event) => {
     event.preventDefault()
@@ -557,7 +575,7 @@ const GraphEditorInner = () => {
         source_node_id: Number(params.source),
         target_node_id: Number(params.target),
         edge_type: 'direct',
-      })
+      }, agent?.agent_version_id)
 
       const newEdge = {
         ...params,
@@ -569,7 +587,7 @@ const GraphEditorInner = () => {
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Failed to create edge')
     }
-  }, [agentId, storeAddEdge])
+  }, [agent?.agent_version_id, agentId, storeAddEdge])
 
   // Edge reconnection — drag an edge endpoint to a new node
   const edgeReconnectSuccessful = useRef(false)
@@ -730,6 +748,40 @@ const GraphEditorInner = () => {
     })
   }, [clearLayoutUndoSnapshot, fitView, isRearranging, layoutUndoSnapshot, persistNodePositions, setNodePositions])
 
+  const handleVersionChange = useCallback((nextVersionId) => {
+    if (!nextVersionId || String(nextVersionId) === String(agent?.version_number)) return
+    navigate(`/agents/${agentId}/version/${nextVersionId}/edit`)
+  }, [agent?.version_number, agentId, navigate])
+
+  const handleCreateVersion = useCallback(async () => {
+    if (!agent?.id || !agent?.agent_version_id) return
+
+    const sourceVersionNumber = agent.version_number ?? 'current'
+    const confirmed = window.confirm(
+      `Create a new version from v${sourceVersionNumber}?\n\nThe new version will start as a copy of this version.`
+    )
+    if (!confirmed) return
+
+    try {
+      const created = await createAgentVersion(agent.id, agent.agent_version_id)
+      toast.success(`Created version ${created.version_number}`)
+      navigate(`/agents/${agent.id}/version/${created.version_number}/edit`)
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to create version')
+    }
+  }, [agent, navigate])
+
+  const handleRun = useCallback(async () => {
+    if (!agent?.id || !agent?.agent_version_id) return
+    try {
+      const session = await createAgentSession(agent.id, agent.agent_version_id)
+      const url = `/agents/${agent.id}/version/${agent.version_number}/session/${session.id}`
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to create session')
+    }
+  }, [agent])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen" style={{ background: 'var(--bg)' }}>
@@ -749,7 +801,9 @@ const GraphEditorInner = () => {
         agent={agent}
         isDirty={isDirty}
         onSchemaEdit={() => setShowSchemaEditor(true)}
-        onRun={() => setShowRunModal(true)}
+        onRun={handleRun}
+        onVersionChange={handleVersionChange}
+        onCreateVersion={handleCreateVersion}
         onRearrangeGraph={handleRearrangeFromEntry}
         onUndoLayout={handleUndoRearrange}
         canUndoLayout={Boolean(layoutUndoSnapshot?.length)}
@@ -825,9 +879,6 @@ const GraphEditorInner = () => {
           onClose={() => setShowSchemaEditor(false)}
           onUpdate={(updated) => setAgent(updated)}
         />
-      )}
-      {showRunModal && agent && (
-        <RunModal agent={agent} onClose={() => setShowRunModal(false)} />
       )}
       {pendingNodeCreation && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)' }}>

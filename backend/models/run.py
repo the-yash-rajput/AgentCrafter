@@ -22,20 +22,29 @@ class Run(Base):
 
     id = Column(BigInteger, Identity(start=1), primary_key=True)
     agent_id = Column(BigInteger, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
-    session_id = Column(Text, nullable=True)
+    agent_version_id = Column(
+        BigInteger,
+        ForeignKey("agent_versions.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    session_id = Column(BigInteger, ForeignKey("agent_sessions.id", ondelete="CASCADE"), nullable=True, index=True)
+    parent_run_id = Column(BigInteger, ForeignKey("runs.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(SAEnum(RunStatus, name="run_status"), default=RunStatus.pending, nullable=False, index=True)
     input_data = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     output_data = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
-    conversation_history = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
-    conversation_turn = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
     state_snapshots = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
     error = Column(Text, nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
     agent = relationship("Agent", back_populates="runs")
+    agent_version = relationship("AgentVersion", back_populates="runs")
+    session = relationship("AgentSession", back_populates="runs")
+    parent_run = relationship("Run", remote_side=[id])
 
     __table_args__ = (
         Index("ix_runs_agent_started_at", "agent_id", "started_at"),
+        Index("ix_runs_agent_version_started_at", "agent_id", "agent_version_id", "started_at"),
         Index("ix_runs_agent_session_started_at", "agent_id", "session_id", "started_at"),
     )

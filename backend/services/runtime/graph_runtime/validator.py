@@ -15,6 +15,7 @@ class GraphValidator:
         target_agents_by_name: dict[str, int],
     ) -> GraphValidationReport:
         agent = graph_data.agent
+        version = graph_data.version
         nodes = graph_data.nodes
         edges = graph_data.edges
 
@@ -26,10 +27,10 @@ class GraphValidator:
         if not nodes:
             errors.append("Agent has no nodes")
 
-        if agent.entry_node and agent.entry_node not in node_names:
-            errors.append(f"Entry node '{agent.entry_node}' does not exist")
+        if version.entry_node and version.entry_node not in node_names:
+            errors.append(f"Entry node '{version.entry_node}' does not exist")
 
-        exit_nodes = get_agent_exit_nodes(agent)
+        exit_nodes = get_agent_exit_nodes(version)
         invalid_exit_nodes = [node_name for node_name in exit_nodes if node_name not in node_names]
         if invalid_exit_nodes:
             errors.extend([f"Exit node '{node_name}' does not exist" for node_name in invalid_exit_nodes])
@@ -98,7 +99,7 @@ class GraphValidator:
             if edge.target_node_id not in node_ids:
                 errors.append(f"Edge target node ID '{edge.target_node_id}' does not exist")
 
-        if not agent.entry_node:
+        if not version.entry_node:
             warnings.append("No entry node set — will execute nodes in creation order")
 
         return GraphValidationReport(

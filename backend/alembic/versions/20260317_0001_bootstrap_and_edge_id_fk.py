@@ -18,6 +18,27 @@ branch_labels = None
 depends_on = None
 
 
+def _create_enum_type_if_missing(name: str, values: tuple[str, ...]) -> None:
+    quoted_values = ", ".join(f"'{value}'" for value in values)
+    op.execute(
+        sa.text(
+            f"""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_type
+                    WHERE typname = '{name}'
+                ) THEN
+                    CREATE TYPE {name} AS ENUM ({quoted_values});
+                END IF;
+            END
+            $$;
+            """
+        )
+    )
+
+
 def _constraint_exists(bind, name: str) -> bool:
     query = sa.text(
         """
@@ -43,12 +64,21 @@ def _index_exists(bind, name: str) -> bool:
 
 
 def _create_full_schema() -> None:
+    _create_enum_type_if_missing("agent_status", ("draft", "active", "archived"))
+    _create_enum_type_if_missing("node_type", ("functional", "llm_call"))
+    _create_enum_type_if_missing("edge_type", ("direct", "conditional"))
+    _create_enum_type_if_missing("run_status", ("pending", "running", "success", "failed"))
+
     op.create_table(
         "agents",
         sa.Column("id", sa.BigInteger(), sa.Identity(start=1), primary_key=True),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
-        sa.Column("status", sa.Enum("draft", "active", "archived", name="agent_status"), nullable=False),
+        sa.Column(
+            "status",
+            postgresql.ENUM("draft", "active", "archived", name="agent_status", create_type=False),
+            nullable=False,
+        ),
         sa.Column("input_schema", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
         sa.Column("output_schema", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
         sa.Column("state_schema", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
@@ -66,7 +96,11 @@ def _create_full_schema() -> None:
         sa.Column("id", sa.BigInteger(), sa.Identity(start=1), primary_key=True),
         sa.Column("agent_id", sa.BigInteger(), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("type", sa.Enum("functional", "llm_call", name="node_type"), nullable=False),
+        sa.Column(
+            "type",
+            postgresql.ENUM("functional", "llm_call", name="node_type", create_type=False),
+            nullable=False,
+        ),
         sa.Column("config", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
         sa.Column("position_x", sa.Float(), nullable=True),
         sa.Column("position_y", sa.Float(), nullable=True),
@@ -84,7 +118,11 @@ def _create_full_schema() -> None:
         sa.Column("agent_id", sa.BigInteger(), nullable=False),
         sa.Column("source_node_id", sa.BigInteger(), nullable=False),
         sa.Column("target_node_id", sa.BigInteger(), nullable=False),
-        sa.Column("edge_type", sa.Enum("direct", "conditional", name="edge_type"), nullable=False),
+        sa.Column(
+            "edge_type",
+            postgresql.ENUM("direct", "conditional", name="edge_type", create_type=False),
+            nullable=False,
+        ),
         sa.Column("condition_config", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
         sa.Column("label", sa.String(length=255), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
@@ -101,7 +139,11 @@ def _create_full_schema() -> None:
         "runs",
         sa.Column("id", sa.BigInteger(), sa.Identity(start=1), primary_key=True),
         sa.Column("agent_id", sa.BigInteger(), nullable=False),
-        sa.Column("status", sa.Enum("pending", "running", "success", "failed", name="run_status"), nullable=False),
+        sa.Column(
+            "status",
+            postgresql.ENUM("pending", "running", "success", "failed", name="run_status", create_type=False),
+            nullable=False,
+        ),
         sa.Column("input_data", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
         sa.Column("output_data", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
         sa.Column("state_snapshots", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'[]'::jsonb")),

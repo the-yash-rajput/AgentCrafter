@@ -36,9 +36,11 @@ class GraphRunner:
         agent_id: int,
         input_data: StatePayload,
         *,
+        agent_version_id: Optional[int] = None,
         execution_context: Optional[ExecutionContext] = None,
         persisted_input_data: Optional[StatePayload] = None,
-        session_id: Optional[str] = None,
+        session_id: Optional[int] = None,
+        parent_run_id: Optional[int] = None,
         conversation_history: Optional[list[dict[str, str]]] = None,
     ) -> dict:
         base_execution_context = dict(execution_context or {})
@@ -58,6 +60,7 @@ class GraphRunner:
 
         request = GraphExecutionRequest(
             agent_id=agent_id,
+            agent_version_id=agent_version_id,
             input_data=runtime_input,
             persisted_input_data=strip_session_fields(
                 persisted_input_data if persisted_input_data is not None else input_data
@@ -71,21 +74,22 @@ class GraphRunner:
             },
         ).with_agent_call_stack(max_depth=self.max_agent_call_depth)
 
-        graph_data = self.repository.fetch_for_execution(request.agent_id)
+        graph_data = self.repository.fetch_for_execution(request.agent_id, request.agent_version_id)
         if not graph_data.nodes:
             raise ValueError("Agent has no nodes configured")
 
-        initial_state = apply_state_schema_defaults(request.input_data, graph_data.agent.state_schema)
+        initial_state = apply_state_schema_defaults(request.input_data, graph_data.version.state_schema)
         persisted_initial_state = apply_state_schema_defaults(
             request.persisted_input_data,
-            graph_data.agent.state_schema,
+            graph_data.version.state_schema,
         )
 
         run = self.repository.create_run(
             request.agent_id,
             persisted_initial_state,
+            agent_version_id=graph_data.version.id,
             session_id=request.session_id,
-            conversation_history=request.conversation_history,
+            parent_run_id=parent_run_id,
         )
         snapshots: list[dict] = []
         current_state = dict(initial_state or {})
@@ -97,7 +101,7 @@ class GraphRunner:
         )
         request.execution_context["langfuse_handler"] = trace_session.callback_handler
         request.execution_context["langfuse_metadata"] = dict(trace_session.metadata or {})
-        exit_nodes = set(get_agent_exit_nodes(graph_data.agent))
+        exit_nodes = set(get_agent_exit_nodes(graph_data.version))
 
         try:
             compiled_graph = self.builder.compile(
@@ -126,15 +130,16 @@ class GraphRunner:
                 run,
                 persisted_output,
                 snapshots,
-                conversation_turn=build_conversation_turn(
-                    persisted_initial_state,
-                    agent_output=persisted_output,
-                ),
+            )
+            conversation_turn = build_conversation_turn(
+                persisted_initial_state,
+                agent_output=persisted_output,
             )
             self.trace_service.mark_success(trace_session, current_state)
             return {
                 **result.to_dict(),
                 "output": persisted_output,
+                "conversation_turn": conversation_turn,
             }
 
         except Exception as e:
@@ -149,19 +154,26 @@ class GraphRunner:
                 run,
                 str(e),
                 snapshots,
-                conversation_turn=build_conversation_turn(
-                    persisted_initial_state,
-                    agent_output=persisted_output,
-                    error=str(e),
-                ),
+            )
+            conversation_turn = build_conversation_turn(
+                persisted_initial_state,
+                agent_output=persisted_output,
+                error=str(e),
             )
             self.trace_service.mark_failure(trace_session, current_state, str(e))
-            raise
+            return {
+                "run_id": run.id,
+                "status": "failed",
+                "output": persisted_output,
+                "snapshots": snapshots,
+                "error": str(e),
+                "conversation_turn": conversation_turn,
+            }
         finally:
             self.trace_service.close(trace_session)
 
-    def validate_graph(self, agent_id: int) -> dict:
-        graph_data = self.repository.fetch_for_validation(agent_id)
+    def validate_graph(self, agent_id: int, agent_version_id: Optional[int] = None) -> dict:
+        graph_data = self.repository.fetch_for_validation(agent_id, agent_version_id)
         if not graph_data:
             return {"valid": False, "errors": ["Agent not found"]}
 

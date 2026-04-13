@@ -25,7 +25,7 @@ const AgentCard = ({ agent, onOpen, onEditDetails, onDelete, onDuplicate }) => {
         border: '1px solid var(--border)',
         cursor: 'pointer',
       }}
-      onClick={() => onOpen(agent.id)}
+      onClick={() => onOpen(agent)}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
@@ -81,7 +81,7 @@ const AgentCard = ({ agent, onOpen, onEditDetails, onDelete, onDuplicate }) => {
           <Edit3 size={11} /> Edit
         </button>
         <button
-          onClick={() => onOpen(agent.id)}
+          onClick={() => onOpen(agent)}
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
           style={{ background: '#6366f1', color: '#fff' }}
         >
@@ -311,6 +311,17 @@ export const Dashboard = () => {
     setAgents(prev => prev.map(a => a.id === updated.id ? { ...a, ...updated } : a))
   }
 
+  const handleOpenAgent = (agent) => {
+    if (!agent?.id) return
+
+    const latestVersion = Array.isArray(agent.versions) && agent.versions.length
+      ? [...agent.versions].sort((left, right) => (left.version_number || 0) - (right.version_number || 0)).at(-1)
+      : null
+    const versionNumber = agent.version_number || latestVersion?.version_number
+
+    navigate(versionNumber ? `/agents/${agent.id}/version/${versionNumber}/edit` : `/agents/${agent.id}/edit`)
+  }
+
   const handleImport = async (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -398,7 +409,7 @@ export const Dashboard = () => {
                 <AgentCard
                   key={agent.id}
                   agent={agent}
-                  onOpen={(id) => navigate(`/agents/${id}/edit`)}
+                  onOpen={handleOpenAgent}
                   onEditDetails={(a) => setEditingAgent(a)}
                   onDelete={handleDelete}
                   onDuplicate={handleDuplicate}
@@ -412,7 +423,11 @@ export const Dashboard = () => {
       {showCreate && (
         <CreateModal
           onClose={() => setShowCreate(false)}
-          onCreate={(a) => { setAgents(prev => [a, ...prev]); navigate(`/agents/${a.id}/edit`) }}
+          onCreate={(a) => {
+            setAgents(prev => [a, ...prev])
+            const versionNumber = a.version_number || a.versions?.[a.versions.length - 1]?.version_number
+            navigate(versionNumber ? `/agents/${a.id}/version/${versionNumber}/edit` : `/agents/${a.id}/edit`)
+          }}
         />
       )}
 

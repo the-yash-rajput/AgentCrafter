@@ -20,23 +20,26 @@ def _load_run_service_module():
         def __eq__(self, other):
             return f"{self.name} == {other!r}"
 
-        def isnot(self, other):
-            return f"{self.name} IS NOT {other!r}"
-
         def desc(self):
             return f"{self.name} DESC"
 
     class _Run:
+        agent_id = _Column("agent_id")
+        agent_version_id = _Column("agent_version_id")
         session_id = _Column("session_id")
-        completed_at = _Column("completed_at")
         started_at = _Column("started_at")
         id = _Column("id")
 
     fake_modules = {
         "sqlalchemy": types.SimpleNamespace(),
         "sqlalchemy.orm": types.SimpleNamespace(Session=object),
-        "models": types.SimpleNamespace(Agent=type("Agent", (), {}), Run=_Run),
-        "schemas.schemas": types.SimpleNamespace(RunCreate=object),
+        "models": types.SimpleNamespace(
+            Agent=type("Agent", (), {"id": _Column("agent.id")}),
+            AgentSession=type("AgentSession", (), {"id": _Column("session.id")}),
+            AgentVersion=type("AgentVersion", (), {"id": _Column("version.id")}),
+            Run=_Run,
+        ),
+        "schemas.schemas": types.SimpleNamespace(AgentSessionCreate=object, RunCreate=object),
         "services.runtime.graph_runner": types.SimpleNamespace(GraphRunner=object),
     }
 
@@ -56,59 +59,66 @@ RunService = run_service_module.RunService
 
 
 class RunServiceTests(unittest.TestCase):
-    def test_get_session_conversation_uses_shared_completed_session_history(self) -> None:
+    def test_run_response_uses_session_owned_conversation_payload(self) -> None:
+        run = SimpleNamespace(
+            id=99,
+            agent_id=10,
+            agent_version_id=21,
+            session_id=42,
+            parent_run_id=None,
+            status="success",
+            input_data={"input": "Hello"},
+            output_data={"answer": "Hi"},
+            state_snapshots=[],
+            error=None,
+            started_at="start",
+            completed_at="done",
+        )
+
+        response = RunService(MagicMock())._run_response(
+            run,
+            conversation_history=[
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi"},
+            ],
+            conversation_turn=[
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi"},
+            ],
+        )
+
+        self.assertEqual(response["session_id"], 42)
+        self.assertEqual(response["agent_version_id"], 21)
+        self.assertEqual(
+            response["conversation_history"],
+            [
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi"},
+            ],
+        )
+        self.assertEqual(len(response["conversation_turn"]), 2)
+
+    def test_list_runs_filters_by_agent_version_and_session(self) -> None:
         db = MagicMock()
         query = db.query.return_value
         query.filter.return_value = query
         query.order_by.return_value = query
+        query.offset.return_value = query
         query.limit.return_value = query
-        query.all.return_value = [
-            SimpleNamespace(
-                agent_id=101,
-                conversation_turn=[
-                    {"role": "user", "content": "Hi"},
-                    {"role": "assistant", "content": "Hello from agent A"},
-                ],
-                input_data={},
-                output_data={},
-                error=None,
-            ),
-            SimpleNamespace(
-                agent_id=202,
-                conversation_turn=[
-                    {"role": "assistant", "content": "Agent B follow-up"},
-                ],
-                input_data={},
-                output_data={},
-                error=None,
-            ),
-        ]
+        query.all.return_value = []
 
-        history = RunService(db)._get_session_conversation("thread-42")
+        service = RunService(db)
+        service._get_agent_or_404 = MagicMock(return_value=object())
 
-        self.assertEqual(
-            history,
-            [
-                {"role": "assistant", "content": "Agent B follow-up"},
-                {"role": "user", "content": "Hi"},
-                {"role": "assistant", "content": "Hello from agent A"},
-            ],
-        )
+        runs = service.list_runs(10, agent_version_id=21, session_id=42, limit=500, offset=-1)
+
+        self.assertEqual(runs, [])
         db.query.assert_called_once_with(RunModel)
-        query.filter.assert_called_once_with(
-            "session_id == 'thread-42'",
-            "completed_at IS NOT None",
-        )
-        query.order_by.assert_called_once_with("started_at DESC", "id DESC")
-        query.limit.assert_called_once_with(RunService.session_history_limit)
-
-    def test_get_session_conversation_skips_query_without_session_id(self) -> None:
-        db = MagicMock()
-
-        history = RunService(db)._get_session_conversation(None)
-
-        self.assertEqual(history, [])
-        db.query.assert_not_called()
+        query.filter.assert_any_call("agent_id == 10")
+        query.filter.assert_any_call("agent_version_id == 21")
+        query.filter.assert_any_call("session_id == 42")
+        query.limit.assert_called_once_with(200)
+        query.offset.assert_called_once_with(0)
 
 
 if __name__ == "__main__":

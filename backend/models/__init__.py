@@ -22,6 +22,8 @@ __all__ = [
     "Node",
     "Edge",
     "Run",
+    "AgentVersion",
+    "AgentSession",
 ]
 
 
@@ -42,4 +44,12 @@ def __getattr__(name: str):
         from models.run import Run
 
         return Run
+    if name == "AgentVersion":
+        from models.agent_version import AgentVersion
+
+        return AgentVersion
+    if name == "AgentSession":
+        from models.agent_session import AgentSession
+
+        return AgentSession
     raise AttributeError(f"module 'models' has no attribute '{name}'")

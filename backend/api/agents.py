@@ -5,7 +5,15 @@ from sqlalchemy.orm import Session
 from api.error_handling import translate_service_errors
 from db.session import get_db
 from services.agent_service import AgentService
-from schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, AgentWithGraph
+from schemas.schemas import (
+    AgentCreate,
+    AgentResponse,
+    AgentUpdate,
+    AgentVersionCreate,
+    AgentVersionResponse,
+    AgentVersionUpdate,
+    AgentWithGraph,
+)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -24,8 +32,37 @@ def list_agents(limit: int = 50, offset: int = 0, db: Session = Depends(get_db))
 
 @router.get("/{agent_id}", response_model=AgentWithGraph)
 @translate_service_errors
-def get_agent(agent_id: int, db: Session = Depends(get_db)):
-    return AgentService(db).get_agent(agent_id, include_graph=True)
+def get_agent(agent_id: int, version_id: int | None = None, db: Session = Depends(get_db)):
+    return AgentService(db).get_agent(agent_id, include_graph=True, version_id=version_id)
+
+
+@router.get("/{agent_id}/versions", response_model=List[AgentVersionResponse])
+@translate_service_errors
+def list_agent_versions(agent_id: int, db: Session = Depends(get_db)):
+    return AgentService(db).list_versions(agent_id)
+
+
+@router.get("/{agent_id}/versions/{version_id}", response_model=AgentWithGraph)
+@translate_service_errors
+def get_agent_version(agent_id: int, version_id: int, db: Session = Depends(get_db)):
+    return AgentService(db).get_agent_version(agent_id, version_id, include_graph=True)
+
+
+@router.post("/{agent_id}/versions", response_model=AgentWithGraph)
+@translate_service_errors
+def create_agent_version(agent_id: int, payload: AgentVersionCreate, db: Session = Depends(get_db)):
+    return AgentService(db).create_version_from_base(agent_id, payload)
+
+
+@router.put("/{agent_id}/versions/{version_id}", response_model=AgentWithGraph)
+@translate_service_errors
+def update_agent_version(
+    agent_id: int,
+    version_id: int,
+    payload: AgentVersionUpdate,
+    db: Session = Depends(get_db),
+):
+    return AgentService(db).update_agent_version(agent_id, version_id, payload)
 
 
 @router.put("/{agent_id}", response_model=AgentResponse)

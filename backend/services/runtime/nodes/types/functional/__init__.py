@@ -12,6 +12,7 @@ def build_functional_node(
     *,
     db=None,
     current_agent_id: Optional[int] = None,
+    current_agent_version_id: Optional[int] = None,
     execution_context: Optional[ExecutionContext] = None,
 ) -> NodeRunner:
     if subtype == NodeSubtype.python_inline:
@@ -26,6 +27,7 @@ def build_functional_node(
             config,
             db=db,
             current_agent_id=current_agent_id,
+            current_agent_version_id=current_agent_version_id,
             execution_context=execution_context,
         )
 

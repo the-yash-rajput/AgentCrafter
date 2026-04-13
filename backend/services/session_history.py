@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable
+from typing import Any
 
 from type_defs import StatePayload
 
@@ -36,12 +36,16 @@ _PREFERRED_ASSISTANT_KEYS = (
 )
 
 
-def normalize_session_id(session_id: Any) -> str | None:
+def normalize_session_id(session_id: Any) -> int | None:
     if session_id is None:
         return None
 
-    value = str(session_id).strip()
-    return value or None
+    try:
+        value = int(str(session_id).strip())
+    except (TypeError, ValueError):
+        return None
+
+    return value if value > 0 else None
 
 
 def strip_session_fields(payload: StatePayload | None) -> StatePayload:
@@ -101,26 +105,6 @@ def build_conversation_turn(
     )
     if assistant_content:
         messages.append({"role": "assistant", "content": assistant_content})
-
-    return messages
-
-
-def flatten_conversation_history(runs: Iterable[Any]) -> list[dict[str, str]]:
-    messages: list[dict[str, str]] = []
-
-    for run in runs:
-        stored_turn = normalize_conversation_history(getattr(run, "conversation_turn", None))
-        if stored_turn:
-            messages.extend(stored_turn)
-            continue
-
-        messages.extend(
-            build_conversation_turn(
-                getattr(run, "input_data", None),
-                agent_output=getattr(run, "output_data", None),
-                error=getattr(run, "error", None),
-            )
-        )
 
     return messages
 

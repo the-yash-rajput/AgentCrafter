@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Trash2, Brain, Zap, ChevronDown, ChevronRight, Flag, LogOut, RadioTower, Copy } from 'lucide-react'
 import { useGraphStore } from '../../hooks/useGraphStore'
-import { updateNode, deleteNode, updateAgent, updateEdge, deleteEdge, getAgents, getLangfusePrompts, getNodeDefinitions } from '../../api/client'
+import { updateNode, deleteNode, updateAgentVersion, updateEdge, deleteEdge, getAgents, getLangfusePrompts, getNodeDefinitions } from '../../api/client'
 import toast from 'react-hot-toast'
 import Editor from '@monaco-editor/react'
 
@@ -556,6 +556,7 @@ const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
                 set('agent_call', {
                   ...(cfg.agent_call || {}),
                   target_agent_id: value,
+                  target_agent_version_id: selectedAgent?.agent_version_id || '',
                   target_agent_name: selectedAgent?.name || '',
                 })
               }}
@@ -568,6 +569,21 @@ const FunctionalNodeConfig = ({ config, onChange, currentAgentId }) => {
               ]}
             />
           </Field>
+          {cfg.agent_call?.target_agent_id && (
+            <Field label="Target Version">
+              <Select
+                value={String(cfg.agent_call?.target_agent_version_id || '')}
+                onChange={value => setNested('agent_call', 'target_agent_version_id', value)}
+                options={[
+                  { value: '', label: 'Latest version' },
+                  ...((availableAgents.find(agent => String(agent.id) === String(cfg.agent_call?.target_agent_id))?.versions || []).map(version => ({
+                    value: String(version.id),
+                    label: `v${version.version_number}`,
+                  }))),
+                ]}
+              />
+            </Field>
+          )}
           <Field label="Input Mode">
             <Select
               value={cfg.agent_call?.input_mode || 'entire_state'}
@@ -1039,7 +1055,7 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320, onDuplicateNode })
 
   const handleSetEntry = async () => {
     try {
-      const updated = await updateAgent(agent.id, { entry_node: nodeName })
+      const updated = await updateAgentVersion(agent.id, agent.agent_version_id, { entry_node: nodeName })
       setAgent(updated)
       toast.success(`${nodeName} set as entry node`)
     } catch (e) { toast.error(e.response?.data?.detail || 'Failed') }
@@ -1050,7 +1066,7 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320, onDuplicateNode })
       const nextExitNodes = isExitNode
         ? exitNodes.filter(exitName => exitName !== nodeName)
         : [...exitNodes, nodeName]
-      const updated = await updateAgent(agent.id, { exit_nodes: nextExitNodes })
+      const updated = await updateAgentVersion(agent.id, agent.agent_version_id, { exit_nodes: nextExitNodes })
       setAgent(updated)
       toast.success(isExitNode ? `${nodeName} removed from exit nodes` : `${nodeName} added to exit nodes`)
     } catch (e) { toast.error(e.response?.data?.detail || 'Failed') }

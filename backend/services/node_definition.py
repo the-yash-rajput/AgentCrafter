@@ -53,6 +53,7 @@ class NodeDefinitionSpec:
 def _build_agent_call_default_config() -> JSONMapping:
     return {
         "target_agent_id": "",
+        "target_agent_version_id": "",
         "target_agent_name": "",
         "input_mode": AgentCallInputMode.entire_state.value,
         "input_key": "",

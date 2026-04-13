@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Play, Database, Download, Upload, Copy, CheckCircle, AlertCircle, ChevronDown, Sparkles, Undo2 } from 'lucide-react'
-import { updateAgent, validateAgent, exportAgent } from '../../api/client'
+import { ArrowLeft, Play, Database, Download, CheckCircle, AlertCircle, Sparkles, Undo2 } from 'lucide-react'
+import { validateAgent, exportAgent } from '../../api/client'
 import { useGraphStore } from '../../hooks/useGraphStore'
 import toast from 'react-hot-toast'
 
@@ -10,6 +10,8 @@ export const TopBar = ({
   isDirty,
   onSchemaEdit,
   onRun,
+  onVersionChange,
+  onCreateVersion,
   onRearrangeGraph,
   onUndoLayout,
   canUndoLayout = false,
@@ -17,31 +19,13 @@ export const TopBar = ({
 }) => {
   const navigate = useNavigate()
   const { setAgent, latestRun } = useGraphStore()
-  const [saving, setSaving] = useState(false)
   const [validation, setValidation] = useState(null)
-  const [showMenu, setShowMenu] = useState(false)
   const hasEntryNode = Boolean(agent?.entry_node)
   const latestRunId = latestRun?.id ?? latestRun?.run_id ?? null
 
-  const handleSaveAgent = async () => {
-    if (!agent) return
-    setSaving(true)
-    try {
-      const updated = await updateAgent(agent.id, {
-        name: agent.name,
-        status: 'active',
-      })
-      setAgent(updated)
-      toast.success('Agent saved')
-    } catch (e) {
-      toast.error('Save failed')
-    }
-    setSaving(false)
-  }
-
   const handleValidate = async () => {
     try {
-      const result = await validateAgent(agent.id)
+      const result = await validateAgent(agent.id, agent.agent_version_id)
       setValidation(result)
       if (result.valid) toast.success(`Valid graph — ${result.node_count} nodes, ${result.edge_count} edges`)
       else toast.error(`${result.errors.length} validation error(s)`)
@@ -94,6 +78,28 @@ export const TopBar = ({
           style={{ minWidth: '120px', maxWidth: '240px' }}
         />
         {isDirty && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>●</span>}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <select
+          value={agent?.version_number || ''}
+          onChange={event => onVersionChange?.(event.target.value)}
+          className="px-2 py-1 rounded-lg text-xs font-mono outline-none"
+          style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text-dim)' }}
+        >
+          {(agent?.versions || []).map(version => (
+            <option key={version.id} value={version.version_number}>
+              v{version.version_number}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={onCreateVersion}
+          className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors hover:opacity-80"
+          style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text-dim)' }}
+        >
+          New from v{agent?.version_number || ''}
+        </button>
       </div>
 
       <div className="flex-1" />
