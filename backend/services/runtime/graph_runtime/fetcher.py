@@ -5,6 +5,19 @@ from datetime import datetime
 from sqlalchemy.orm import Session, load_only
 
 from models import Agent, Edge, Node, Run, RunStatus
+from models.agent_version import AgentVersion
+
+
+class _VersionedAgentProxy:
+    """Combines Agent identity (id, name) with AgentVersion graph fields."""
+    __slots__ = ("id", "name", "state_schema", "entry_node", "exit_nodes")
+
+    def __init__(self, agent: Agent, version: AgentVersion) -> None:
+        self.id = agent.id
+        self.name = agent.name
+        self.state_schema = version.state_schema
+        self.entry_node = version.entry_node
+        self.exit_nodes = version.exit_nodes
 from services.exceptions import NotFoundError
 from services.runtime.graph_runtime.dtos import GraphFetchResult
 from type_defs import StatePayload
@@ -14,10 +27,23 @@ class GraphRuntimeRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def fetch_for_execution(self, agent_id: int) -> GraphFetchResult:
+    def fetch_for_execution(self, agent_id: int, version_id: int | None = None) -> GraphFetchResult:
+        if version_id is not None:
+            return self._fetch_by_version(version_id)
+
         agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:
             raise NotFoundError(f"Agent {agent_id} not found")
+
+        # Fall back to latest version
+        version = (
+            self.db.query(AgentVersion)
+            .filter(AgentVersion.agent_id == agent_id)
+            .order_by(AgentVersion.version_number.desc())
+            .first()
+        )
+        if version:
+            return self._fetch_by_version(version.id)
 
         nodes = (
             self.db.query(Node)
@@ -41,10 +67,68 @@ class GraphRuntimeRepository:
         )
         return GraphFetchResult(agent=agent, nodes=nodes, edges=edges)
 
-    def fetch_for_validation(self, agent_id: int) -> GraphFetchResult | None:
+    def _fetch_by_version(self, version_id: int) -> GraphFetchResult:
+        version = self.db.query(AgentVersion).filter(AgentVersion.id == version_id).first()
+        if not version:
+            raise NotFoundError(f"Version {version_id} not found")
+
+        agent = self.db.query(Agent).filter(Agent.id == version.agent_id).first()
+        if not agent:
+            raise NotFoundError(f"Agent {version.agent_id} not found")
+
+        nodes = (
+            self.db.query(Node)
+            .options(load_only(Node.id, Node.name, Node.type, Node.subtype, Node.config))
+            .filter(Node.version_id == version_id)
+            .all()
+        )
+        edges = (
+            self.db.query(Edge)
+            .options(
+                load_only(
+                    Edge.source_node_id,
+                    Edge.target_node_id,
+                    Edge.edge_type,
+                    Edge.condition_config,
+                    Edge.label,
+                )
+            )
+            .filter(Edge.version_id == version_id)
+            .all()
+        )
+        return GraphFetchResult(agent=_VersionedAgentProxy(agent, version), nodes=nodes, edges=edges)
+
+    def fetch_for_validation(self, agent_id: int, version_id: int | None = None) -> GraphFetchResult | None:
+        if version_id is not None:
+            version = self.db.query(AgentVersion).filter(AgentVersion.id == version_id).first()
+            if not version:
+                return None
+            nodes = (
+                self.db.query(Node)
+                .options(load_only(Node.id, Node.name, Node.type, Node.subtype, Node.config))
+                .filter(Node.version_id == version_id)
+                .all()
+            )
+            edges = (
+                self.db.query(Edge)
+                .options(load_only(Edge.source_node_id, Edge.target_node_id))
+                .filter(Edge.version_id == version_id)
+                .all()
+            )
+            return GraphFetchResult(agent=version, nodes=nodes, edges=edges)
+
         agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:
             return None
+
+        version = (
+            self.db.query(AgentVersion)
+            .filter(AgentVersion.agent_id == agent_id)
+            .order_by(AgentVersion.version_number.desc())
+            .first()
+        )
+        if version:
+            return self.fetch_for_validation(agent_id, version_id=version.id)
 
         nodes = (
             self.db.query(Node)
@@ -73,16 +157,17 @@ class GraphRuntimeRepository:
         agent_id: int,
         input_data: StatePayload,
         *,
-        session_id: str | None = None,
+        version_id: int | None = None,
+        session_id: int | None = None,
         conversation_history: list[dict[str, str]] | None = None,
     ) -> Run:
         run = Run(
             agent_id=agent_id,
+            version_id=version_id,
             session_id=session_id,
             status=RunStatus.running,
             input_data=dict(input_data or {}),
             output_data={},
-            conversation_history=list(conversation_history or []),
             conversation_turn=[],
             state_snapshots=[],
             started_at=datetime.utcnow(),

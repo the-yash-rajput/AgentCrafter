@@ -24,6 +24,7 @@ class Node(Base):
 
     id = Column(BigInteger, Identity(start=1), primary_key=True)
     agent_id = Column(BigInteger, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_id = Column(BigInteger, ForeignKey("agent_versions.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     type = Column(SAEnum(NodeType, name="node_type"), nullable=False)
     subtype = Column(
@@ -38,9 +39,10 @@ class Node(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     agent = relationship("Agent", back_populates="nodes")
+    version = relationship("AgentVersion", back_populates="nodes")
 
     __table_args__ = (
-        UniqueConstraint("agent_id", "name", name="uq_nodes_agent_name"),
+        UniqueConstraint("version_id", "name", name="uq_nodes_version_name"),
         # Required for composite foreign keys from edges(agent_id, *_node_id).
         UniqueConstraint("agent_id", "id", name="uq_nodes_agent_id_id"),
         Index("ix_nodes_agent_created_at", "agent_id", "created_at"),

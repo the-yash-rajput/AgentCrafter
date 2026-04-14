@@ -9,13 +9,12 @@ import 'reactflow/dist/style.css'
 import toast from 'react-hot-toast'
 
 import { useGraphStore } from '../../hooks/useGraphStore'
-import { getAgent, createNode, createEdge, updateNode, updateEdge as apiUpdateEdge } from '../../api/client'
+import { getAgent, getVersions, getVersion, createNode, createEdge, updateNode, updateEdge as apiUpdateEdge } from '../../api/client'
 import { nodeTypes } from '../canvas/NodeTypes'
 import { edgeTypes } from '../canvas/EdgeTypes'
 import { NodePalette } from '../canvas/NodePalette'
 import { ConfigPanel } from '../panels/ConfigPanel'
 import { StateSchemaEditor } from '../panels/StateSchemaEditor'
-import { RunModal } from '../panels/RunModal'
 import { TopBar } from './TopBar'
 
 let nodeCounter = 1
@@ -351,7 +350,7 @@ const createAutoLayout = ({ nodes, edges, entryNodeId }) => {
 }
 
 const GraphEditorInner = () => {
-  const { agentId } = useParams()
+  const { agentId, versionId } = useParams()
   const navigate = useNavigate()
   const reactFlowWrapper = useRef(null)
   const { screenToFlowPosition, fitView } = useReactFlow()
@@ -366,7 +365,6 @@ const GraphEditorInner = () => {
 
   const [loading, setLoading] = useState(true)
   const [showSchemaEditor, setShowSchemaEditor] = useState(false)
-  const [showRunModal, setShowRunModal] = useState(false)
   const [showNodePalette, setShowNodePalette] = useState(true)
   const [showConfigPanel, setShowConfigPanel] = useState(true)
   const [configPanelWidth, setConfigPanelWidth] = useState(320)
@@ -378,8 +376,27 @@ const GraphEditorInner = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await getAgent(agentId)
-        loadGraph(data)
+        if (versionId) {
+          const versionData = await getVersion(agentId, versionId)
+          // Load graph from version — combine with agent info for compatibility
+          loadGraph({
+            ...versionData,
+            id: Number(agentId),
+            entry_node: versionData.entry_node,
+            exit_nodes: versionData.exit_nodes,
+            state_schema: versionData.state_schema,
+          })
+        } else {
+          // No versionId in URL — load agent then redirect to latest version
+          const versions = await getVersions(agentId)
+          if (versions.length > 0) {
+            const latest = versions[0] // ordered desc by version_number
+            navigate(`/agents/${agentId}/version/${latest.id}/edit`, { replace: true })
+            return
+          }
+          const data = await getAgent(agentId)
+          loadGraph(data)
+        }
       } catch (e) {
         toast.error('Failed to load agent')
         navigate('/')
@@ -387,7 +404,7 @@ const GraphEditorInner = () => {
       setLoading(false)
     }
     load()
-  }, [agentId])
+  }, [agentId, versionId])
 
   // Save node positions on drag stop
   const onNodeDragStop = useCallback(async (_, node) => {
@@ -421,7 +438,7 @@ const GraphEditorInner = () => {
         config: defaultConfig,
         position_x: position.x,
         position_y: position.y,
-      })
+      }, versionId)
 
       addNode({
         id: String(created.id),
@@ -463,7 +480,7 @@ const GraphEditorInner = () => {
         config: cloneNodeConfig(draftConfig ?? node.data?.config),
         position_x: position.x,
         position_y: position.y,
-      })
+      }, versionId)
 
       const duplicatedNode = {
         id: String(created.id),
@@ -557,7 +574,7 @@ const GraphEditorInner = () => {
         source_node_id: Number(params.source),
         target_node_id: Number(params.target),
         edge_type: 'direct',
-      })
+      }, versionId)
 
       const newEdge = {
         ...params,
@@ -747,9 +764,9 @@ const GraphEditorInner = () => {
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg)' }}>
       <TopBar
         agent={agent}
+        versionId={versionId}
         isDirty={isDirty}
         onSchemaEdit={() => setShowSchemaEditor(true)}
-        onRun={() => setShowRunModal(true)}
         onRearrangeGraph={handleRearrangeFromEntry}
         onUndoLayout={handleUndoRearrange}
         canUndoLayout={Boolean(layoutUndoSnapshot?.length)}
@@ -825,9 +842,6 @@ const GraphEditorInner = () => {
           onClose={() => setShowSchemaEditor(false)}
           onUpdate={(updated) => setAgent(updated)}
         />
-      )}
-      {showRunModal && agent && (
-        <RunModal agent={agent} onClose={() => setShowRunModal(false)} />
       )}
       {pendingNodeCreation && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)' }}>

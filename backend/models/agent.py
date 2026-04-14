@@ -34,6 +34,8 @@ class Agent(Base):
     nodes = relationship("Node", back_populates="agent", cascade="all, delete-orphan", lazy="selectin")
     edges = relationship("Edge", back_populates="agent", cascade="all, delete-orphan", lazy="selectin")
     runs = relationship("Run", back_populates="agent", cascade="all, delete-orphan", lazy="selectin")
+    versions = relationship("AgentVersion", back_populates="agent", cascade="all, delete-orphan", lazy="selectin")
+    sessions = relationship("AgentSession", back_populates="agent", cascade="all, delete-orphan", lazy="selectin")
 
     __table_args__ = (
         Index("ix_agents_status_created_at", "status", "created_at"),

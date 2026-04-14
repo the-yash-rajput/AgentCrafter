@@ -13,7 +13,7 @@ class GraphExecutionRequest:
     agent_id: int
     input_data: StatePayload = field(default_factory=dict)
     persisted_input_data: StatePayload = field(default_factory=dict)
-    session_id: str | None = None
+    session_id: int | None = None
     conversation_history: list[dict[str, str]] = field(default_factory=list)
     execution_context: ExecutionContext = field(default_factory=dict)
 

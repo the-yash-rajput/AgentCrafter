@@ -109,6 +109,7 @@ class NodeUpdate(BaseModel):
 class NodeResponse(BaseModel):
     id: int
     agent_id: int
+    version_id: int
     name: str
     type: NodeType
     subtype: NodeSubtype
@@ -142,6 +143,7 @@ class EdgeUpdate(BaseModel):
 class EdgeResponse(BaseModel):
     id: int
     agent_id: int
+    version_id: int
     source_node_id: int
     target_node_id: int
     edge_type: EdgeType
@@ -153,30 +155,55 @@ class EdgeResponse(BaseModel):
         from_attributes = True
 
 
-# ─── Run Schemas ──────────────────────────────────────────────────────────────
+# ─── Version Schemas ──────────────────────────────────────────────────────────
 
-class RunCreate(BaseModel):
+class AgentVersionResponse(BaseModel):
+    id: int
+    agent_id: int
+    version_number: int
+    entry_node: Optional[str]
+    exit_nodes: List[str] = Field(default_factory=list)
+    state_schema: JSONMapping = Field(default_factory=dict)
+    created_from_version_id: Optional[int]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AgentVersionWithGraph(AgentVersionResponse):
+    nodes: List[NodeResponse] = Field(default_factory=list)
+    edges: List[EdgeResponse] = Field(default_factory=list)
+
+
+# ─── Session Schemas ──────────────────────────────────────────────────────────
+
+class SessionResponse(BaseModel):
+    id: int
+    agent_id: int
+    version_id: int
+    conversation_history: Any
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SessionRunCreate(BaseModel):
     input_data: JSONMapping = Field(default_factory=dict)
-    session_id: Optional[str] = None
 
-    @field_validator("session_id")
-    @classmethod
-    def normalize_session_id(cls, value):
-        if value is None:
-            return None
 
-        normalized = str(value).strip()
-        return normalized or None
-
+# ─── Run Schemas ──────────────────────────────────────────────────────────────
 
 class RunResponse(BaseModel):
     id: int
     agent_id: int
-    session_id: Optional[str]
+    version_id: Optional[int]
+    session_id: Optional[int]
     status: RunStatus
     input_data: JSONMapping
     output_data: JSONMapping
-    conversation_history: Any
     conversation_turn: Any
     state_snapshots: Any
     error: Optional[str]

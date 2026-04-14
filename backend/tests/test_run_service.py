@@ -13,31 +13,30 @@ if str(BACKEND_ROOT) not in sys.path:
 
 
 def _load_run_service_module():
-    class _Column:
-        def __init__(self, name: str) -> None:
-            self.name = name
-
-        def __eq__(self, other):
-            return f"{self.name} == {other!r}"
-
-        def isnot(self, other):
-            return f"{self.name} IS NOT {other!r}"
-
-        def desc(self):
-            return f"{self.name} DESC"
-
     class _Run:
-        session_id = _Column("session_id")
-        completed_at = _Column("completed_at")
-        started_at = _Column("started_at")
-        id = _Column("id")
+        pass
+
+    class _AgentSession:
+        pass
 
     fake_modules = {
         "sqlalchemy": types.SimpleNamespace(),
         "sqlalchemy.orm": types.SimpleNamespace(Session=object),
         "models": types.SimpleNamespace(Agent=type("Agent", (), {}), Run=_Run),
-        "schemas.schemas": types.SimpleNamespace(RunCreate=object),
+        "models.agent_session": types.SimpleNamespace(AgentSession=_AgentSession),
+        "schemas.schemas": types.SimpleNamespace(SessionRunCreate=object),
         "services.runtime.graph_runner": types.SimpleNamespace(GraphRunner=object),
+        "services.session_service": types.SimpleNamespace(SessionService=object),
+        "services.session_history": types.SimpleNamespace(
+            CONVERSATION_HISTORY_KEY="conversation_history",
+            normalize_conversation_history=lambda h: h or [],
+        ),
+        "services.state_schema": types.SimpleNamespace(apply_state_schema_defaults=lambda data, schema: data),
+        "services.exceptions": types.SimpleNamespace(
+            NotFoundError=Exception,
+            ServiceError=Exception,
+            ValidationError=Exception,
+        ),
     }
 
     module_path = BACKEND_ROOT / "services/run_service.py"
@@ -56,59 +55,20 @@ RunService = run_service_module.RunService
 
 
 class RunServiceTests(unittest.TestCase):
-    def test_get_session_conversation_uses_shared_completed_session_history(self) -> None:
+    def test_get_run_returns_run(self) -> None:
         db = MagicMock()
-        query = db.query.return_value
-        query.filter.return_value = query
-        query.order_by.return_value = query
-        query.limit.return_value = query
-        query.all.return_value = [
-            SimpleNamespace(
-                agent_id=101,
-                conversation_turn=[
-                    {"role": "user", "content": "Hi"},
-                    {"role": "assistant", "content": "Hello from agent A"},
-                ],
-                input_data={},
-                output_data={},
-                error=None,
-            ),
-            SimpleNamespace(
-                agent_id=202,
-                conversation_turn=[
-                    {"role": "assistant", "content": "Agent B follow-up"},
-                ],
-                input_data={},
-                output_data={},
-                error=None,
-            ),
-        ]
+        run = SimpleNamespace(id=1, status="success")
+        db.query.return_value.filter.return_value.first.return_value = run
 
-        history = RunService(db)._get_session_conversation("thread-42")
+        result = RunService(db).get_run(1)
+        self.assertEqual(result, run)
 
-        self.assertEqual(
-            history,
-            [
-                {"role": "assistant", "content": "Agent B follow-up"},
-                {"role": "user", "content": "Hi"},
-                {"role": "assistant", "content": "Hello from agent A"},
-            ],
-        )
-        db.query.assert_called_once_with(RunModel)
-        query.filter.assert_called_once_with(
-            "session_id == 'thread-42'",
-            "completed_at IS NOT None",
-        )
-        query.order_by.assert_called_once_with("started_at DESC", "id DESC")
-        query.limit.assert_called_once_with(RunService.session_history_limit)
-
-    def test_get_session_conversation_skips_query_without_session_id(self) -> None:
+    def test_get_run_raises_not_found(self) -> None:
         db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
 
-        history = RunService(db)._get_session_conversation(None)
-
-        self.assertEqual(history, [])
-        db.query.assert_not_called()
+        with self.assertRaises(Exception):
+            RunService(db).get_run(999)
 
 
 if __name__ == "__main__":

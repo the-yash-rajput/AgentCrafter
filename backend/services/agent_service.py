@@ -34,6 +34,10 @@ class AgentService:
         self.db.add(agent)
         self._commit_or_raise("Invalid agent payload")
         self.db.refresh(agent)
+
+        from services.agent_version_service import AgentVersionService
+        AgentVersionService(self.db).create_initial_version(agent)
+
         return agent
 
     def list_agents(self, limit: int = 50, offset: int = 0) -> list[Agent]:
