@@ -240,3 +240,42 @@ class NodeDefinitionResponse(BaseModel):
 
 AgentWithGraph.model_rebuild()
 AgentListResponse.model_rebuild()
+
+
+# ─── Export / Import Schemas ──────────────────────────────────────────────────
+
+class AgentMetaExportSchema(BaseModel):
+    name: str
+    description: Optional[str]
+
+
+class VersionExportSchema(BaseModel):
+    version_number: int
+    entry_node: Optional[str]
+    exit_nodes: List[str]
+    state_schema: JSONMapping
+
+
+class NodeExportSchema(BaseModel):
+    name: str
+    type: str
+    subtype: str
+    config: JSONMapping
+    position_x: float
+    position_y: float
+
+
+class EdgeExportSchema(BaseModel):
+    source_node_name: str
+    target_node_name: str
+    edge_type: str
+    condition_config: JSONMapping
+    label: Optional[str]
+
+
+class AgentExportPayload(BaseModel):
+    schema_version: int
+    agent: AgentMetaExportSchema
+    version: VersionExportSchema
+    nodes: List[NodeExportSchema]
+    edges: List[EdgeExportSchema]

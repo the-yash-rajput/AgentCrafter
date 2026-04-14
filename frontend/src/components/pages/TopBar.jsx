@@ -54,7 +54,7 @@ export const TopBar = ({
 
   const handleExport = async () => {
     try {
-      const data = await exportAgent(agent.id)
+      const data = await exportAgent(agent.id, versionId)
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')

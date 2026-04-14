@@ -6,16 +6,8 @@ from sqlalchemy.orm import Session, selectinload, noload
 from models import Agent, AgentStatus, Edge, Node
 from models.agent_version import AgentVersion
 from schemas.schemas import AgentCreate, AgentUpdate
-from services.agent_exit_nodes import get_agent_exit_nodes, sync_exit_fields
+from services.agent_exit_nodes import normalize_exit_nodes
 from services.exceptions import NotFoundError, ValidationError
-from services.node_definition import resolve_node_definition
-
-
-def _sanitize_agent_payload(payload: dict) -> dict:
-    sanitized = dict(payload or {})
-    sanitized.pop("input_schema", None)
-    sanitized.pop("output_schema", None)
-    return sanitized
 
 
 class AgentService:
@@ -23,14 +15,14 @@ class AgentService:
         self.db = db
 
     def create_agent(self, payload: AgentCreate) -> Agent:
-        payload_data = _sanitize_agent_payload(sync_exit_fields(payload.model_dump(by_alias=False)))
+        data = payload.model_dump(by_alias=False)
         agent = Agent(
-            name=payload_data["name"],
-            description=payload_data.get("description"),
-            state_schema=payload_data.get("state_schema") or {},
-            entry_node=payload_data.get("entry_node"),
-            exit_nodes=payload_data.get("exit_nodes") or [],
-            metadata_=payload_data.get("metadata_") or {},
+            name=data["name"],
+            description=data.get("description"),
+            state_schema=data.get("state_schema") or {},
+            entry_node=data.get("entry_node"),
+            exit_nodes=data.get("exit_nodes") or [],
+            metadata_=data.get("metadata_") or {},
         )
         self.db.add(agent)
         self._commit_or_raise("Invalid agent payload")
@@ -70,10 +62,10 @@ class AgentService:
 
     def update_agent(self, agent_id: int, payload: AgentUpdate) -> Agent:
         agent = self.get_agent(agent_id)
-        update_data = _sanitize_agent_payload(payload.model_dump(exclude_unset=True))
+        update_data = payload.model_dump(exclude_unset=True)
 
         if "exit_nodes" in update_data:
-            sync_exit_fields(update_data)
+            update_data["exit_nodes"] = normalize_exit_nodes(update_data["exit_nodes"])
             self._validate_exit_nodes(agent_id, update_data["exit_nodes"])
 
         for key, value in update_data.items():
@@ -93,153 +85,77 @@ class AgentService:
         return {"message": "Agent deleted"}
 
     def duplicate_agent(self, agent_id: int) -> Agent:
-        agent = self.get_agent(agent_id)
-        exit_nodes = get_agent_exit_nodes(agent)
+        from services.agent_version_service import AgentVersionService
+
+        source_agent = self.get_agent(agent_id)
+        version_svc = AgentVersionService(self.db)
+        latest = version_svc.get_latest(agent_id)
+
         new_agent = Agent(
-            name=f"{agent.name} (copy)",
-            description=agent.description,
+            name=f"{source_agent.name} (copy)",
+            description=source_agent.description,
             status=AgentStatus.draft,
-            state_schema=agent.state_schema,
-            entry_node=agent.entry_node,
-            exit_nodes=exit_nodes,
-            metadata_=agent.metadata_,
+            state_schema={},
+            entry_node=None,
+            exit_nodes=[],
+            metadata_=dict(source_agent.metadata_ or {}),
         )
         self.db.add(new_agent)
         self.db.flush()
 
-        node_id_pairs: list[tuple[int, Node]] = []
-        for node in agent.nodes:
-            new_node = Node(
+        if latest:
+            source_version = version_svc.get_version(latest.id, include_graph=True)
+            new_version = AgentVersion(
                 agent_id=new_agent.id,
-                name=node.name,
-                type=node.type,
-                subtype=node.subtype,
-                config=node.config,
-                position_x=node.position_x,
-                position_y=node.position_y,
+                version_number=1,
+                entry_node=source_version.entry_node,
+                exit_nodes=list(source_version.exit_nodes or []),
+                state_schema=dict(source_version.state_schema or {}),
+                metadata_={},
             )
-            self.db.add(new_node)
-            node_id_pairs.append((node.id, new_node))
-        self.db.flush()
+            self.db.add(new_version)
+            self.db.flush()
 
-        node_id_map = {old_id: new_node.id for old_id, new_node in node_id_pairs}
-        for edge in agent.edges:
-            mapped_source = node_id_map.get(edge.source_node_id)
-            mapped_target = node_id_map.get(edge.target_node_id)
-            if mapped_source is None or mapped_target is None:
-                raise ValidationError("Failed to map edge endpoints while duplicating")
-            self.db.add(
-                Edge(
+            old_to_new: dict[int, int] = {}
+            for node in source_version.nodes:
+                new_node = Node(
                     agent_id=new_agent.id,
-                    source_node_id=mapped_source,
-                    target_node_id=mapped_target,
-                    edge_type=edge.edge_type,
-                    condition_config=edge.condition_config,
-                    label=edge.label,
+                    version_id=new_version.id,
+                    name=node.name,
+                    type=node.type,
+                    subtype=node.subtype,
+                    config=dict(node.config or {}),
+                    position_x=node.position_x,
+                    position_y=node.position_y,
                 )
-            )
+                self.db.add(new_node)
+                self.db.flush()
+                old_to_new[node.id] = new_node.id
+
+            for edge in source_version.edges:
+                new_src = old_to_new.get(edge.source_node_id)
+                new_tgt = old_to_new.get(edge.target_node_id)
+                if new_src and new_tgt:
+                    self.db.add(Edge(
+                        agent_id=new_agent.id,
+                        version_id=new_version.id,
+                        source_node_id=new_src,
+                        target_node_id=new_tgt,
+                        edge_type=edge.edge_type,
+                        condition_config=dict(edge.condition_config or {}),
+                        label=edge.label,
+                    ))
+        else:
+            self.db.add(AgentVersion(
+                agent_id=new_agent.id,
+                version_number=1,
+                entry_node=None,
+                exit_nodes=[],
+                state_schema={},
+                metadata_={},
+            ))
 
         self._commit_or_raise("Failed to duplicate agent")
-        self.db.refresh(new_agent)
-        return new_agent
-
-    def export_agent(self, agent_id: int) -> dict:
-        agent = self.get_agent(agent_id)
-        exit_nodes = get_agent_exit_nodes(agent)
-        return {
-            "agent": {
-                "name": agent.name,
-                "description": agent.description,
-                "state_schema": agent.state_schema,
-                "entry_node": agent.entry_node,
-                "exit_nodes": exit_nodes,
-            },
-            "nodes": [
-                {
-                    "id": node.id,
-                    "name": node.name,
-                    "type": node.type.value,
-                    "subtype": node.subtype.value,
-                    "config": node.config,
-                    "position_x": node.position_x,
-                    "position_y": node.position_y,
-                }
-                for node in agent.nodes
-            ],
-            "edges": [
-                {
-                    "source_node_id": edge.source_node_id,
-                    "target_node_id": edge.target_node_id,
-                    "edge_type": edge.edge_type.value,
-                    "condition_config": edge.condition_config,
-                    "label": edge.label,
-                }
-                for edge in agent.edges
-            ],
-        }
-
-    def import_agent(self, data: dict) -> Agent:
-        agent_data = _sanitize_agent_payload(sync_exit_fields(dict(data.get("agent", {}))))
-        new_agent = Agent(**agent_data)
-        self.db.add(new_agent)
-        self.db.flush()
-
-        node_id_map: dict[int, int] = {}
-        node_name_map: dict[str, int] = {}
-        node_pairs_by_old_id: list[tuple[int, Node]] = []
-        created_nodes: list[Node] = []
-
-        for raw_node in data.get("nodes", []):
-            node_data = dict(raw_node)
-            import_node_id = node_data.pop("id", None)
-            try:
-                node_data["type"], node_data["subtype"], node_data["config"] = resolve_node_definition(
-                    node_data.get("type"),
-                    node_data.get("subtype"),
-                    node_data.get("config"),
-                )
-            except ValueError as exc:
-                raise ValidationError(f"Invalid import payload: {exc}") from exc
-
-            node = Node(agent_id=new_agent.id, **node_data)
-            self.db.add(node)
-            created_nodes.append(node)
-            if import_node_id is not None:
-                try:
-                    node_pairs_by_old_id.append((int(import_node_id), node))
-                except (TypeError, ValueError):
-                    pass
-
-        self.db.flush()
-        for old_id, node in node_pairs_by_old_id:
-            node_id_map[old_id] = node.id
-        for node in created_nodes:
-            node_name_map[node.name] = node.id
-
-        for raw_edge in data.get("edges", []):
-            edge_data = dict(raw_edge)
-            edge_data.pop("id", None)
-            source_ref = edge_data.get("source_node_id")
-            target_ref = edge_data.get("target_node_id")
-
-            mapped_source = node_id_map.get(source_ref) if isinstance(source_ref, int) else None
-            mapped_target = node_id_map.get(target_ref) if isinstance(target_ref, int) else None
-            if mapped_source is None and isinstance(source_ref, str):
-                mapped_source = node_name_map.get(source_ref)
-            if mapped_target is None and isinstance(target_ref, str):
-                mapped_target = node_name_map.get(target_ref)
-
-            if mapped_source is None or mapped_target is None:
-                raise ValidationError(
-                    "Invalid import payload: unable to resolve edge endpoints "
-                    f"source={source_ref} target={target_ref}"
-                )
-
-            edge_data["source_node_id"] = mapped_source
-            edge_data["target_node_id"] = mapped_target
-            self.db.add(Edge(agent_id=new_agent.id, **edge_data))
-
-        self._commit_or_raise("Invalid import payload")
         self.db.refresh(new_agent)
         return new_agent
 

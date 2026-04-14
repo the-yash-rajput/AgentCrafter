@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from api.error_handling import translate_service_errors
 from db.session import get_db
 from services.agent_service import AgentService
+from services.agent_io import AgentConfigSerializer
 from schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, AgentWithGraph, AgentListResponse
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -46,13 +47,7 @@ def duplicate_agent(agent_id: int, db: Session = Depends(get_db)):
     return AgentService(db).duplicate_agent(agent_id)
 
 
-@router.get("/{agent_id}/export")
-@translate_service_errors
-def export_agent(agent_id: int, db: Session = Depends(get_db)):
-    return AgentService(db).export_agent(agent_id)
-
-
 @router.post("/import", response_model=AgentResponse)
 @translate_service_errors
 def import_agent(data: dict, db: Session = Depends(get_db)):
-    return AgentService(db).import_agent(data)
+    return AgentConfigSerializer.deserialize(data, db)

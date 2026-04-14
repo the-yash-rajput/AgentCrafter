@@ -10,7 +10,7 @@ export const createAgent = (data) => api.post('/agents', data).then(r => r.data)
 export const updateAgent = (id, data) => api.put(`/agents/${id}`, data).then(r => r.data)
 export const deleteAgent = (id) => api.delete(`/agents/${id}`).then(r => r.data)
 export const duplicateAgent = (id) => api.post(`/agents/${id}/duplicate`).then(r => r.data)
-export const exportAgent = (id) => api.get(`/agents/${id}/export`).then(r => r.data)
+export const exportAgent = (agentId, versionId) => api.get(`/agents/${agentId}/versions/${versionId}/export`).then(r => r.data)
 export const importAgent = (data) => api.post('/agents/import', data).then(r => r.data)
 export const validateAgent = (id) => api.get(`/agents/${id}/validate`).then(r => r.data)
 

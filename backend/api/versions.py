@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 
 from api.error_handling import translate_service_errors
 from db.session import get_db
-from schemas.schemas import AgentVersionResponse, AgentVersionWithGraph, NodeCreate, NodeResponse, EdgeCreate, EdgeResponse
+from schemas.schemas import AgentVersionResponse, AgentVersionWithGraph, AgentExportPayload, NodeCreate, NodeResponse, EdgeCreate, EdgeResponse
+from services.agent_service import AgentService
 from services.agent_version_service import AgentVersionService
+from services.agent_io import AgentConfigSerializer
 from services.node_service import NodeService
 from services.edge_service import EdgeService
 
@@ -28,6 +30,14 @@ def get_version(agent_id: int, version_id: int, db: Session = Depends(get_db)):
 @translate_service_errors
 def fork_version(agent_id: int, version_id: int, db: Session = Depends(get_db)):
     return AgentVersionService(db).fork_version(version_id)
+
+
+@router.get("/agents/{agent_id}/versions/{version_id}/export", response_model=AgentExportPayload)
+@translate_service_errors
+def export_version(agent_id: int, version_id: int, db: Session = Depends(get_db)):
+    agent = AgentService(db).get_agent(agent_id)
+    version = AgentVersionService(db).get_version(version_id, include_graph=True)
+    return AgentConfigSerializer.serialize(agent, version)
 
 
 @router.post("/agents/{agent_id}/versions/{version_id}/nodes", response_model=NodeResponse)
