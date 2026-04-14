@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Play, Database, Download, CheckCircle, AlertCircle, ChevronDown, Sparkles, Undo2, GitBranch } from 'lucide-react'
-import { updateAgent, validateAgent, exportAgent, getVersions, forkVersion, createSession } from '../../api/client'
+import { validateAgent, exportAgent, getVersions, forkVersion, createSession } from '../../api/client'
 import { useGraphStore } from '../../hooks/useGraphStore'
 import toast from 'react-hot-toast'
 
@@ -17,7 +17,6 @@ export const TopBar = ({
 }) => {
   const navigate = useNavigate()
   const { setAgent } = useGraphStore()
-  const [saving, setSaving] = useState(false)
   const [validation, setValidation] = useState(null)
   const [versions, setVersions] = useState([])
   const [showVersionMenu, setShowVersionMenu] = useState(false)
@@ -41,19 +40,6 @@ export const TopBar = ({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
-
-  const handleSaveAgent = async () => {
-    if (!agent) return
-    setSaving(true)
-    try {
-      const updated = await updateAgent(agent.id, { name: agent.name, status: 'active' })
-      setAgent(updated)
-      toast.success('Agent saved')
-    } catch {
-      toast.error('Save failed')
-    }
-    setSaving(false)
-  }
 
   const handleValidate = async () => {
     try {
@@ -92,7 +78,7 @@ export const TopBar = ({
     try {
       const newVersion = await forkVersion(agent.id, versionId)
       toast.success(`Created v${newVersion.version_number}`)
-      navigate(`/agents/${agent.id}/version/${newVersion.id}/edit`)
+      window.open(`/agents/${agent.id}/version/${newVersion.id}/edit`, '_blank')
     } catch {
       toast.error('Fork failed')
     }
@@ -162,7 +148,7 @@ export const TopBar = ({
                   key={v.id}
                   onClick={() => {
                     setShowVersionMenu(false)
-                    navigate(`/agents/${agent.id}/version/${v.id}/edit`)
+                    window.open(`/agents/${agent.id}/version/${v.id}/edit`, '_blank')
                   }}
                   className="w-full text-left px-3 py-1.5 text-xs hover:opacity-80"
                   style={{

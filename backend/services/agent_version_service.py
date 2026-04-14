@@ -68,18 +68,6 @@ class AgentVersionService:
         self.db.refresh(version)
         return version
 
-    def update_version(self, version_id: int, data: dict) -> AgentVersion:
-        version = self.get_version(version_id)
-        for key, value in data.items():
-            setattr(version, key, value)
-        try:
-            self.db.commit()
-        except IntegrityError as exc:
-            self.db.rollback()
-            raise ValidationError(f"Invalid version update: {exc.orig}") from exc
-        self.db.refresh(version)
-        return version
-
     def fork_version(self, from_version_id: int) -> AgentVersion:
         source = self.get_version(from_version_id, include_graph=True)
         max_number = (
