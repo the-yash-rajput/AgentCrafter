@@ -23,6 +23,7 @@ export const TopBar = ({
   const [showVersionMenu, setShowVersionMenu] = useState(false)
   const [forking, setForking] = useState(false)
   const [launching, setLaunching] = useState(false)
+  const [showForkConfirm, setShowForkConfirm] = useState(false)
   const versionMenuRef = useRef(null)
   const hasEntryNode = Boolean(agent?.entry_node)
 
@@ -80,8 +81,13 @@ export const TopBar = ({
     }
   }
 
-  const handleFork = async () => {
+  const handleFork = () => {
     if (!agent?.id || !versionId || forking) return
+    setShowForkConfirm(true)
+  }
+
+  const confirmFork = async () => {
+    setShowForkConfirm(false)
     setForking(true)
     try {
       const newVersion = await forkVersion(agent.id, versionId)
@@ -252,6 +258,51 @@ export const TopBar = ({
       >
         <Play size={12} fill="#fff" /> {launching ? 'Starting...' : 'Run'}
       </button>
+
+      {showForkConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.6)' }}
+          onClick={() => setShowForkConfirm(false)}
+        >
+          <div
+            className="rounded-xl p-6 flex flex-col gap-4 min-w-[320px] shadow-xl"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border2)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2">
+              <GitBranch size={18} style={{ color: 'var(--accent)' }} />
+              <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Fork Version</span>
+            </div>
+            <p className="text-sm" style={{ color: 'var(--text-dim)' }}>
+              Are you sure you want to fork{' '}
+              <span className="font-mono font-semibold" style={{ color: 'var(--text)' }}>
+                v{currentVersion?.version_number ?? "NA"}
+              </span>
+              ? <>
+                <br />
+                A new version will be created from this one.
+              </>
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowForkConfirm(false)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:opacity-80"
+                style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text-dim)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmFork}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:opacity-80"
+                style={{ background: '#6366f1', color: '#fff' }}
+              >
+                <GitBranch size={12} /> Fork
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
