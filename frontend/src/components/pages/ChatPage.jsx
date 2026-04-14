@@ -3,22 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Send } from 'lucide-react'
 import { getAgent, getSession, runInSession, getRun } from '../../api/client'
 
-const OUTPUT_KEYS = ['final_answer', 'response', 'output', 'message', 'reply', 'answer']
-
-const extractResponse = (outputData) => {
-  if (!outputData || typeof outputData !== 'object') return null
-  for (const key of OUTPUT_KEYS) {
-    if (outputData[key] && typeof outputData[key] === 'string' && outputData[key].trim()) {
-      return outputData[key].trim()
-    }
-  }
-  // fallback: first non-empty string value
-  for (const val of Object.values(outputData)) {
-    if (val && typeof val === 'string' && val.trim()) return val.trim()
-  }
-  return null
-}
-
 const pollRun = async (runId, maxAttempts = 60, intervalMs = 1000) => {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise(resolve => setTimeout(resolve, intervalMs))
@@ -134,11 +118,10 @@ export const ChatPage = () => {
           error: true,
         }])
       } else {
-        const response = extractResponse(completedRun.output_data)
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: response || 'Done.',
-        }])
+        // Reload conversation history from the session — same source as a page refresh
+        const updatedSession = await getSession(agentId, versionId, sessionId)
+        const history = updatedSession.conversation_history || []
+        setMessages(history.map(msg => ({ role: msg.role, content: msg.content })))
       }
     } catch (e) {
       setMessages(prev => [...prev, {

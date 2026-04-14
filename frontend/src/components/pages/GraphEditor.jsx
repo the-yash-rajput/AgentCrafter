@@ -374,10 +374,14 @@ const GraphEditorInner = () => {
   const [pendingNodeName, setPendingNodeName] = useState('')
 
   useEffect(() => {
+    setLoading(true)
+    let cancelled = false
+
     const load = async () => {
       try {
         if (versionId) {
           const versionData = await getVersion(agentId, versionId)
+          if (cancelled) return
           // Load graph from version — combine with agent info for compatibility
           loadGraph({
             ...versionData,
@@ -389,21 +393,25 @@ const GraphEditorInner = () => {
         } else {
           // No versionId in URL — load agent then redirect to latest version
           const versions = await getVersions(agentId)
+          if (cancelled) return
           if (versions.length > 0) {
             const latest = versions[0] // ordered desc by version_number
             navigate(`/agents/${agentId}/version/${latest.id}/edit`, { replace: true })
             return
           }
           const data = await getAgent(agentId)
+          if (cancelled) return
           loadGraph(data)
         }
       } catch (e) {
+        if (cancelled) return
         toast.error('Failed to load agent')
         navigate('/')
       }
-      setLoading(false)
+      if (!cancelled) setLoading(false)
     }
     load()
+    return () => { cancelled = true }
   }, [agentId, versionId])
 
   // Save node positions on drag stop
@@ -452,7 +460,7 @@ const GraphEditorInner = () => {
       toast.error('Failed to create node')
       return false
     }
-  }, [agentId, addNode])
+  }, [agentId, versionId, addNode])
 
   const duplicateCanvasNode = useCallback(async ({ node, draftName, draftConfig } = {}) => {
     if (!node) return false
@@ -498,7 +506,7 @@ const GraphEditorInner = () => {
       toast.error(e.response?.data?.detail || 'Failed to copy node')
       return false
     }
-  }, [addNode, agentId, nodes, selectNode])
+  }, [addNode, agentId, versionId, nodes, selectNode])
 
   const onDrop = useCallback((event) => {
     event.preventDefault()
@@ -586,7 +594,7 @@ const GraphEditorInner = () => {
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Failed to create edge')
     }
-  }, [agentId, storeAddEdge])
+  }, [agentId, versionId, storeAddEdge])
 
   // Edge reconnection — drag an edge endpoint to a new node
   const edgeReconnectSuccessful = useRef(false)
