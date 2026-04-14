@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from db.session import run_migrations
-from api import agents, nodes, edges, runs, langfuse
+from db.session import create_tables
+from api import agents, nodes, edges, runs, langfuse, versions, sessions
 
 app = FastAPI(
     title="Agent Crafter API",
@@ -20,13 +20,15 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup():
-    run_migrations()
+    create_tables()
 
 
 app.include_router(agents.router, prefix="/api")
 app.include_router(nodes.router, prefix="/api")
 app.include_router(edges.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
+app.include_router(versions.router, prefix="/api")
+app.include_router(sessions.router, prefix="/api")
 app.include_router(langfuse.router, prefix="/api")
 
 

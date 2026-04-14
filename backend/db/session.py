@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from db.base import Base
@@ -10,7 +9,6 @@ DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "40"))
 DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
 DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))
 
-# Tuned for concurrent agent fetch/execute workloads.
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
@@ -32,16 +30,6 @@ def get_db():
 
 def create_tables():
     from models import Agent, Node, Edge, Run  # noqa
+    from models.agent_version import AgentVersion  # noqa
+    from models.agent_session import AgentSession  # noqa
     Base.metadata.create_all(bind=engine)
-
-
-def run_migrations():
-    from alembic import command
-    from alembic.config import Config
-
-    backend_root = Path(__file__).resolve().parents[1]
-    script_location = backend_root / "alembic"
-    cfg = Config()
-    cfg.set_main_option("script_location", str(script_location))
-    cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
-    command.upgrade(cfg, "head")

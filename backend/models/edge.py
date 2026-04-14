@@ -23,6 +23,7 @@ class Edge(Base):
 
     id = Column(BigInteger, Identity(start=1), primary_key=True)
     agent_id = Column(BigInteger, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_id = Column(BigInteger, ForeignKey("agent_versions.id", ondelete="CASCADE"), nullable=False, index=True)
     source_node_id = Column(BigInteger, nullable=False)
     target_node_id = Column(BigInteger, nullable=False)
     edge_type = Column(SAEnum(EdgeType, name="edge_type"), default=EdgeType.direct, nullable=False)
@@ -31,6 +32,7 @@ class Edge(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     agent = relationship("Agent", back_populates="edges")
+    version = relationship("AgentVersion", back_populates="edges")
 
     __table_args__ = (
         ForeignKeyConstraint(

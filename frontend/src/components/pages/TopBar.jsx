@@ -1,39 +1,55 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Play, Database, Download, Upload, Copy, CheckCircle, AlertCircle, ChevronDown, Sparkles, Undo2 } from 'lucide-react'
-import { updateAgent, validateAgent, exportAgent } from '../../api/client'
+import { ArrowLeft, Play, Database, Download, CheckCircle, AlertCircle, ChevronDown, Sparkles, Undo2, GitBranch } from 'lucide-react'
+import { updateAgent, validateAgent, exportAgent, getVersions, forkVersion, createSession } from '../../api/client'
 import { useGraphStore } from '../../hooks/useGraphStore'
 import toast from 'react-hot-toast'
 
 export const TopBar = ({
   agent,
+  versionId,
   isDirty,
   onSchemaEdit,
-  onRun,
   onRearrangeGraph,
   onUndoLayout,
   canUndoLayout = false,
   isRearranging = false,
 }) => {
   const navigate = useNavigate()
-  const { setAgent, latestRun } = useGraphStore()
+  const { setAgent } = useGraphStore()
   const [saving, setSaving] = useState(false)
   const [validation, setValidation] = useState(null)
-  const [showMenu, setShowMenu] = useState(false)
+  const [versions, setVersions] = useState([])
+  const [showVersionMenu, setShowVersionMenu] = useState(false)
+  const [forking, setForking] = useState(false)
+  const [launching, setLaunching] = useState(false)
+  const [showForkConfirm, setShowForkConfirm] = useState(false)
+  const versionMenuRef = useRef(null)
   const hasEntryNode = Boolean(agent?.entry_node)
-  const latestRunId = latestRun?.id ?? latestRun?.run_id ?? null
+
+  useEffect(() => {
+    if (!agent?.id) return
+    getVersions(agent.id).then(setVersions).catch(() => {})
+  }, [agent?.id])
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (versionMenuRef.current && !versionMenuRef.current.contains(e.target)) {
+        setShowVersionMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const handleSaveAgent = async () => {
     if (!agent) return
     setSaving(true)
     try {
-      const updated = await updateAgent(agent.id, {
-        name: agent.name,
-        status: 'active',
-      })
+      const updated = await updateAgent(agent.id, { name: agent.name, status: 'active' })
       setAgent(updated)
       toast.success('Agent saved')
-    } catch (e) {
+    } catch {
       toast.error('Save failed')
     }
     setSaving(false)
@@ -45,7 +61,7 @@ export const TopBar = ({
       setValidation(result)
       if (result.valid) toast.success(`Valid graph — ${result.node_count} nodes, ${result.edge_count} edges`)
       else toast.error(`${result.errors.length} validation error(s)`)
-    } catch (e) {
+    } catch {
       toast.error('Validation failed')
     }
   }
@@ -60,11 +76,42 @@ export const TopBar = ({
       a.download = `${agent.name}.json`
       a.click()
       toast.success('Exported')
-    } catch (e) {
+    } catch {
       toast.error('Export failed')
     }
   }
 
+  const handleFork = () => {
+    if (!agent?.id || !versionId || forking) return
+    setShowForkConfirm(true)
+  }
+
+  const confirmFork = async () => {
+    setShowForkConfirm(false)
+    setForking(true)
+    try {
+      const newVersion = await forkVersion(agent.id, versionId)
+      toast.success(`Created v${newVersion.version_number}`)
+      navigate(`/agents/${agent.id}/version/${newVersion.id}/edit`)
+    } catch {
+      toast.error('Fork failed')
+    }
+    setForking(false)
+  }
+
+  const handleRun = async () => {
+    if (!agent?.id || !versionId || launching) return
+    setLaunching(true)
+    try {
+      const session = await createSession(agent.id, versionId)
+      window.open(`/agents/${agent.id}/version/${versionId}/session/${session.id}`, '_blank')
+    } catch {
+      toast.error('Failed to create session')
+    }
+    setLaunching(false)
+  }
+
+  const currentVersion = versions.find(v => v.id === Number(versionId))
   const statusColors = { draft: '#64748b', active: '#10b981', archived: '#f59e0b' }
 
   return (
@@ -87,14 +134,49 @@ export const TopBar = ({
         <div className="w-2 h-2 rounded-full" style={{ background: statusColors[agent?.status] || '#64748b' }} />
         <input
           value={agent?.name || ''}
-          onChange={async (e) => {
-            setAgent({ ...agent, name: e.target.value })
-          }}
+          onChange={(e) => setAgent({ ...agent, name: e.target.value })}
           className="text-sm font-semibold bg-transparent outline-none border-b border-transparent hover:border-slate-600 text-white"
           style={{ minWidth: '120px', maxWidth: '240px' }}
         />
         {isDirty && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>●</span>}
       </div>
+
+      {/* Version dropdown */}
+      {versions.length > 0 && (
+        <div className="relative" ref={versionMenuRef}>
+          <button
+            onClick={() => setShowVersionMenu(v => !v)}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono transition-colors hover:opacity-80"
+            style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text-dim)' }}
+          >
+            {currentVersion ? `v${currentVersion.version_number}` : 'v?'}
+            <ChevronDown size={10} />
+          </button>
+          {showVersionMenu && (
+            <div
+              className="absolute top-full left-0 mt-1 py-1 rounded-lg z-50 min-w-[120px]"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border2)' }}
+            >
+              {versions.map(v => (
+                <button
+                  key={v.id}
+                  onClick={() => {
+                    setShowVersionMenu(false)
+                    navigate(`/agents/${agent.id}/version/${v.id}/edit`)
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:opacity-80"
+                  style={{
+                    color: v.id === Number(versionId) ? 'var(--accent)' : 'var(--text-dim)',
+                    fontWeight: v.id === Number(versionId) ? 600 : 400,
+                  }}
+                >
+                  v{v.version_number}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex-1" />
 
@@ -110,19 +192,6 @@ export const TopBar = ({
         >
           {validation.valid ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
           {validation.valid ? `${validation.node_count}n ${validation.edge_count}e` : `${validation.errors.length} errors`}
-        </div>
-      )}
-
-      {latestRunId && (
-        <div
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono"
-          style={{
-            background: '#6366f122',
-            color: '#a5b4fc',
-            border: '1px solid #818cf844',
-          }}
-        >
-          Run #{latestRunId}
         </div>
       )}
 
@@ -173,12 +242,67 @@ export const TopBar = ({
       )}
 
       <button
-        onClick={onRun}
-        className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+        onClick={handleFork}
+        disabled={forking || !versionId}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:opacity-80 disabled:opacity-50"
+        style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text-dim)' }}
+      >
+        <GitBranch size={12} /> {forking ? 'Forking...' : 'Fork'}
+      </button>
+
+      <button
+        onClick={handleRun}
+        disabled={launching}
+        className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-60"
         style={{ background: '#6366f1', color: '#fff' }}
       >
-        <Play size={12} fill="#fff" /> Run
+        <Play size={12} fill="#fff" /> {launching ? 'Starting...' : 'Run'}
       </button>
+
+      {showForkConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.6)' }}
+          onClick={() => setShowForkConfirm(false)}
+        >
+          <div
+            className="rounded-xl p-6 flex flex-col gap-4 min-w-[320px] shadow-xl"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border2)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2">
+              <GitBranch size={18} style={{ color: 'var(--accent)' }} />
+              <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Fork Version</span>
+            </div>
+            <p className="text-sm" style={{ color: 'var(--text-dim)' }}>
+              Are you sure you want to fork{' '}
+              <span className="font-mono font-semibold" style={{ color: 'var(--text)' }}>
+                v{currentVersion?.version_number ?? "NA"}
+              </span>
+              ? <>
+                <br />
+                A new version will be created from this one.
+              </>
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowForkConfirm(false)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:opacity-80"
+                style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text-dim)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmFork}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:opacity-80"
+                style={{ background: '#6366f1', color: '#fff' }}
+              >
+                <GitBranch size={12} /> Fork
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

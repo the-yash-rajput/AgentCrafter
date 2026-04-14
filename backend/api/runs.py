@@ -7,16 +7,10 @@ import json
 
 from api.error_handling import translate_service_errors
 from db.session import get_db
-from schemas.schemas import RunCreate, RunResponse
+from schemas.schemas import RunResponse
 from services.run_service import RunService
 
 router = APIRouter(tags=["runs"])
-
-
-@router.post("/agents/{agent_id}/run", response_model=RunResponse)
-@translate_service_errors
-def run_agent(agent_id: int, payload: RunCreate, db: Session = Depends(get_db)):
-    return RunService(db).run_agent(agent_id, payload)
 
 
 @router.get("/agents/{agent_id}/validate")

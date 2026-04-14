@@ -16,17 +16,37 @@ export const validateAgent = (id) => api.get(`/agents/${id}/validate`).then(r =>
 
 // Nodes
 export const getNodeDefinitions = () => api.get('/node-definitions').then(r => r.data)
-export const createNode = (agentId, data) => api.post(`/agents/${agentId}/nodes`, data).then(r => r.data)
+export const createNode = (agentId, data, versionId) => {
+  const url = versionId
+    ? `/agents/${agentId}/versions/${versionId}/nodes`
+    : `/agents/${agentId}/nodes`
+  return api.post(url, data).then(r => r.data)
+}
 export const updateNode = (nodeId, data) => api.put(`/nodes/${nodeId}`, data).then(r => r.data)
 export const deleteNode = (nodeId) => api.delete(`/nodes/${nodeId}`).then(r => r.data)
 
 // Edges
-export const createEdge = (agentId, data) => api.post(`/agents/${agentId}/edges`, data).then(r => r.data)
+export const createEdge = (agentId, data, versionId) => {
+  const url = versionId
+    ? `/agents/${agentId}/versions/${versionId}/edges`
+    : `/agents/${agentId}/edges`
+  return api.post(url, data).then(r => r.data)
+}
 export const updateEdge = (edgeId, data) => api.put(`/edges/${edgeId}`, data).then(r => r.data)
 export const deleteEdge = (edgeId) => api.delete(`/edges/${edgeId}`).then(r => r.data)
 
+// Versions
+export const getVersions = (agentId) => api.get(`/agents/${agentId}/versions`).then(r => r.data)
+export const getVersion = (agentId, versionId) => api.get(`/agents/${agentId}/versions/${versionId}`).then(r => r.data)
+export const forkVersion = (agentId, versionId) => api.post(`/agents/${agentId}/versions/${versionId}/fork`).then(r => r.data)
+
+// Sessions
+export const createSession = (agentId, versionId) => api.post(`/agents/${agentId}/versions/${versionId}/sessions`).then(r => r.data)
+export const getSession = (agentId, versionId, sessionId) => api.get(`/agents/${agentId}/versions/${versionId}/sessions/${sessionId}`).then(r => r.data)
+export const runInSession = (agentId, versionId, sessionId, inputData) =>
+  api.post(`/agents/${agentId}/versions/${versionId}/sessions/${sessionId}/run`, { input_data: inputData }).then(r => r.data)
+
 // Runs
-export const runAgent = (agentId, payload) => api.post(`/agents/${agentId}/run`, payload).then(r => r.data)
 export const getRun = (runId) => api.get(`/runs/${runId}`).then(r => r.data)
 export const getRuns = (agentId) => api.get(`/agents/${agentId}/runs`).then(r => r.data)
 

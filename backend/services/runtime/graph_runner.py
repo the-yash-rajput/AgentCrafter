@@ -5,10 +5,8 @@ from sqlalchemy.orm import Session
 from services.agent_exit_nodes import get_agent_exit_nodes
 from services.session_history import (
     CONVERSATION_HISTORY_KEY,
-    SESSION_ID_KEY,
     build_conversation_turn,
     normalize_conversation_history,
-    normalize_session_id,
     strip_session_fields,
 )
 from services.state_schema import apply_state_schema_defaults
@@ -38,13 +36,11 @@ class GraphRunner:
         *,
         execution_context: Optional[ExecutionContext] = None,
         persisted_input_data: Optional[StatePayload] = None,
-        session_id: Optional[str] = None,
+        session_id: Optional[int] = None,
+        version_id: Optional[int] = None,
         conversation_history: Optional[list[dict[str, str]]] = None,
     ) -> dict:
         base_execution_context = dict(execution_context or {})
-        resolved_session_id = normalize_session_id(
-            session_id if session_id is not None else base_execution_context.get(SESSION_ID_KEY)
-        )
         resolved_conversation_history = normalize_conversation_history(
             conversation_history
             if conversation_history is not None
@@ -52,8 +48,7 @@ class GraphRunner:
         )
 
         runtime_input = strip_session_fields(input_data)
-        if resolved_session_id:
-            runtime_input[SESSION_ID_KEY] = resolved_session_id
+        if session_id is not None:
             runtime_input[CONVERSATION_HISTORY_KEY] = list(resolved_conversation_history)
 
         request = GraphExecutionRequest(
@@ -62,16 +57,15 @@ class GraphRunner:
             persisted_input_data=strip_session_fields(
                 persisted_input_data if persisted_input_data is not None else input_data
             ),
-            session_id=resolved_session_id,
+            session_id=session_id,
             conversation_history=list(resolved_conversation_history),
             execution_context={
                 **base_execution_context,
-                SESSION_ID_KEY: resolved_session_id,
                 CONVERSATION_HISTORY_KEY: list(resolved_conversation_history),
             },
         ).with_agent_call_stack(max_depth=self.max_agent_call_depth)
 
-        graph_data = self.repository.fetch_for_execution(request.agent_id)
+        graph_data = self.repository.fetch_for_execution(request.agent_id, version_id=version_id)
         if not graph_data.nodes:
             raise ValueError("Agent has no nodes configured")
 
@@ -84,8 +78,8 @@ class GraphRunner:
         run = self.repository.create_run(
             request.agent_id,
             persisted_initial_state,
+            version_id=version_id,
             session_id=request.session_id,
-            conversation_history=request.conversation_history,
         )
         snapshots: list[dict] = []
         current_state = dict(initial_state or {})
