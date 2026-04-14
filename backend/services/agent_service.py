@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, selectinload, noload
 
 from models import Agent, AgentStatus, Edge, Node
+from models.agent_version import AgentVersion
 from schemas.schemas import AgentCreate, AgentUpdate
 from services.agent_exit_nodes import get_agent_exit_nodes, sync_exit_fields
 from services.exceptions import NotFoundError, ValidationError
@@ -43,7 +44,20 @@ class AgentService:
     def list_agents(self, limit: int = 50, offset: int = 0) -> list[Agent]:
         limit = max(1, min(limit, 200))
         offset = max(0, offset)
-        return self.db.query(Agent).order_by(Agent.created_at.desc()).offset(offset).limit(limit).all()
+        return (
+            self.db.query(Agent)
+            .options(
+                selectinload(Agent.versions).options(
+                    noload(AgentVersion.nodes),
+                    noload(AgentVersion.edges),
+                    noload(AgentVersion.sessions),
+                )
+            )
+            .order_by(Agent.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
 
     def get_agent(self, agent_id: int, *, include_graph: bool = False) -> Agent:
         query = self.db.query(Agent)

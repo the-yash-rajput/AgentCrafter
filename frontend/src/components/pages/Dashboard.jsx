@@ -14,8 +14,8 @@ const STATUSES = ['draft', 'active', 'archived']
 
 const AgentCard = ({ agent, onOpen, onEditDetails, onDelete, onDuplicate }) => {
   const s = statusColors[agent.status] || statusColors.draft
-  const nodeCount = (agent.nodes || []).length
-  const edgeCount = (agent.edges || []).length
+  const versions = agent.versions || []
+  const latestVersion = versions.reduce((a, b) => (a.version_number > b.version_number ? a : b), versions[0])
 
   return (
     <div
@@ -50,24 +50,26 @@ const AgentCard = ({ agent, onOpen, onEditDetails, onDelete, onDuplicate }) => {
       {/* Stats */}
       <div className="flex items-center gap-4 mb-4">
         <div className="flex items-center gap-1.5">
-          <div className="p-1 rounded" style={{ background: '#7c3aed22' }}>
-            <Brain size={10} style={{ color: '#a78bfa' }} />
-          </div>
-          <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{nodeCount} nodes</span>
-        </div>
-        <div className="flex items-center gap-1.5">
           <div className="p-1 rounded" style={{ background: '#6366f122' }}>
             <GitBranch size={10} style={{ color: '#818cf8' }} />
           </div>
-          <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{edgeCount} edges</span>
+          <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{versions.length} version{versions.length !== 1 ? 's' : ''}</span>
         </div>
+        {latestVersion && (
+          <div className="flex items-center gap-1.5">
+            <div className="p-1 rounded" style={{ background: '#7c3aed22' }}>
+              <Brain size={10} style={{ color: '#a78bfa' }} />
+            </div>
+            <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>latest v{latestVersion.version_number}</span>
+          </div>
+        )}
       </div>
 
       {/* Date */}
       <div className="flex items-center gap-1 mb-4">
         <Clock size={10} style={{ color: 'var(--text-muted)' }} />
         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          {new Date(agent.updated_at).toLocaleDateString()}
+          {latestVersion ? new Date(latestVersion.created_at).toLocaleDateString() : '—'}
         </span>
       </div>
 

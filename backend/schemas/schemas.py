@@ -50,6 +50,17 @@ class AgentResponse(BaseModel):
         populate_by_name = True
 
 
+class AgentListResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    status: AgentStatus
+    versions: List["AgentVersionResponse"] = Field(default_factory=list)
+
+    class Config:
+        from_attributes = True
+
+
 class AgentWithGraph(AgentResponse):
     nodes: List["NodeResponse"] = Field(default_factory=list)
     edges: List["EdgeResponse"] = Field(default_factory=list)
@@ -228,3 +239,4 @@ class NodeDefinitionResponse(BaseModel):
 
 
 AgentWithGraph.model_rebuild()
+AgentListResponse.model_rebuild()

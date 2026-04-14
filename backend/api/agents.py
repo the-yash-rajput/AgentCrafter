@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from api.error_handling import translate_service_errors
 from db.session import get_db
 from services.agent_service import AgentService
-from schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, AgentWithGraph
+from schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, AgentWithGraph, AgentListResponse
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -16,7 +16,7 @@ def create_agent(payload: AgentCreate, db: Session = Depends(get_db)):
     return AgentService(db).create_agent(payload)
 
 
-@router.get("", response_model=List[AgentResponse])
+@router.get("", response_model=List[AgentListResponse])
 @translate_service_errors
 def list_agents(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
     return AgentService(db).list_agents(limit=limit, offset=offset)
