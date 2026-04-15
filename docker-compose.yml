@@ -5,24 +5,25 @@ services:
     environment:
       POSTGRES_USER: langgraph
       POSTGRES_PASSWORD: langgraph_secret
-      POSTGRES_DB: langgraph_builder_2
+      POSTGRES_DB: ldb
     ports:
       - "${POSTGRES_HOST_PORT:-5733}:5733"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U langgraph -d langgraph_builder_2 -p 5733"]
+      test: ["CMD-SHELL", "pg_isready -U langgraph -d ldb -p 5733"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   backend:
-    build: ./backend
+    build: ./backend_django
     ports:
       - "8000:8000"
       - "${BACKEND_DEBUGPY_PORT:-5678}:${BACKEND_DEBUGPY_PORT:-5678}"
     environment:
-      DATABASE_URL: postgresql://langgraph:langgraph_secret@postgres:5733/langgraph_builder_2
+      DATABASE_URL: postgresql://langgraph:langgraph_secret@postgres:5733/ldb
+      DJANGO_SECRET_KEY: ${SECRET_KEY:-supersecretkey}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-10-21}
@@ -31,7 +32,6 @@ services:
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-}
       LANGFUSE_HOST: ${LANGFUSE_HOST:-}
-      SECRET_KEY: ${SECRET_KEY:-supersecretkey}
       BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-debug}
       BACKEND_RELOAD: ${BACKEND_RELOAD:-true}
       BACKEND_DEBUGPY: ${BACKEND_DEBUGPY:-false}
@@ -43,7 +43,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - ./backend:/app
+      - ./backend_django:/app
     command: sh /app/start-backend.sh
 
   frontend:
