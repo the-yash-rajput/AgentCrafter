@@ -42,12 +42,15 @@ def start_run_trace(
     }
 
     try:
-        return client.trace(
-            name="LangGraph",
-            input=_to_serializable(input_data),
-            metadata={**metadata, "trace_type": "langgraph"},
-            session_id=session_id or run_id,
-        )
+        trace_kwargs: Dict[str, Any] = {
+            "id": run_id,
+            "name": "LangGraph",
+            "input": _to_serializable(input_data),
+            "metadata": {**metadata, "trace_type": "langgraph"},
+        }
+        if session_id:
+            trace_kwargs["session_id"] = session_id
+        return client.trace(**trace_kwargs)
     except TypeError:
         # Older SDK compatibility.
         try:

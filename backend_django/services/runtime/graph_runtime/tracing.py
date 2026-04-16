@@ -23,7 +23,7 @@ class LangGraphTraceService:
         *,
         execution_context: dict | None = None,
     ) -> TraceSession:
-        session_id = run.session_id or str(run.id)
+        session_id = str(run.session_id) if run.session_id else None
         raw_user_id = (execution_context or {}).get("user_id")
         user_id = str(raw_user_id).strip() if raw_user_id is not None else None
         user_id = user_id or None
