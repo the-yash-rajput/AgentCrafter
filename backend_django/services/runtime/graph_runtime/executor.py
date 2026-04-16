@@ -5,7 +5,7 @@ from type_defs import StatePayload
 
 
 class LangGraphExecutor:
-    
+
     def execute(
         self,
         compiled_graph: CompiledGraphArtifact,
@@ -13,9 +13,16 @@ class LangGraphExecutor:
         run_id: int,
         input_data: StatePayload,
         snapshots: list[dict],
+        thread_id: str | None = None,
     ) -> GraphRunResult:
         current_state = dict(input_data or {})
-        result = compiled_graph.graph.invoke(current_state)
+
+        # When a checkpointer is attached, thread_id is required so LangGraph
+        # can store/load the checkpoint.  On resume, LangGraph ignores
+        # current_state and loads the saved checkpoint for this thread_id.
+        config = {"configurable": {"thread_id": thread_id}} if thread_id else {}
+
+        result = compiled_graph.graph.invoke(current_state, config)
         if isinstance(result, dict):
             current_state = result
         if "_error" in current_state:

@@ -61,6 +61,40 @@ class RunService:
 
         return run
 
+    def resume_run(self, run_id: int) -> Run:
+        """Resume an interrupted run from its last LangGraph checkpoint.
+
+        Validates the run is in 'interrupted' state, then creates a new Run
+        record that shares the same checkpoint_thread_id so LangGraph
+        automatically resumes from the last saved checkpoint state.
+        """
+        from services.runtime.graph_runtime.fetcher import GraphRuntimeRepository
+
+        repo = GraphRuntimeRepository(self.db)
+        interrupted_run = repo.get_run_for_resume(run_id)
+
+        runner = GraphRunner(self.db)
+        try:
+            result = runner.compile_and_run(
+                interrupted_run.agent_id,
+                dict(interrupted_run.input_data or {}),
+                version_id=interrupted_run.version_id,
+                session_id=interrupted_run.session_id,
+                checkpoint_thread_id=interrupted_run.checkpoint_thread_id,
+                resumed_from_run_id=run_id,
+            )
+        except ServiceError:
+            raise
+        except Exception as exc:
+            raise ServiceError(str(exc)) from exc
+
+        run = self.get_run(result["run_id"])
+        if run.conversation_turn and interrupted_run.session_id:
+            SessionService(self.db).append_conversation_turn(
+                interrupted_run.session_id, run.conversation_turn
+            )
+        return run
+
     def get_run(self, run_id: int) -> Run:
         run = self.db.query(Run).filter(Run.id == run_id).first()
         if not run:

@@ -10,7 +10,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from db.base import Base
@@ -30,6 +30,8 @@ class Run(Base):
     conversation_turn = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
     state_snapshots = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
     error = Column(Text, nullable=True)
+    checkpoint_thread_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    resumed_from_run_id = Column(BigInteger, ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
 

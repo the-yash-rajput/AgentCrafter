@@ -1,3 +1,4 @@
+import uuid
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -10,6 +11,7 @@ from services.session_history import (
     strip_session_fields,
 )
 from services.state_schema import apply_state_schema_defaults
+from db.checkpointer import get_checkpointer
 from services.runtime.graph_runtime.builder import LangGraphBuilder
 from services.runtime.graph_runtime.dtos import GraphExecutionRequest
 from services.runtime.graph_runtime.executor import LangGraphExecutor
@@ -39,6 +41,8 @@ class GraphRunner:
         session_id: Optional[int] = None,
         version_id: Optional[int] = None,
         conversation_history: Optional[list[dict[str, str]]] = None,
+        checkpoint_thread_id: Optional[uuid.UUID] = None,
+        resumed_from_run_id: Optional[int] = None,
     ) -> dict:
         base_execution_context = dict(execution_context or {})
         resolved_conversation_history = normalize_conversation_history(
@@ -75,11 +79,16 @@ class GraphRunner:
             graph_data.agent.state_schema,
         )
 
+        if checkpoint_thread_id is None:
+            checkpoint_thread_id = uuid.uuid4()
+
         run = self.repository.create_run(
             request.agent_id,
             persisted_initial_state,
             version_id=version_id,
             session_id=request.session_id,
+            checkpoint_thread_id=checkpoint_thread_id,
+            resumed_from_run_id=resumed_from_run_id,
         )
         snapshots: list[dict] = []
         current_state = dict(initial_state or {})
@@ -93,6 +102,7 @@ class GraphRunner:
         request.execution_context["langfuse_metadata"] = dict(trace_session.metadata or {})
         exit_nodes = set(get_agent_exit_nodes(graph_data.agent))
 
+        checkpointer = get_checkpointer()
         try:
             compiled_graph = self.builder.compile(
                 request=self._build_request(
@@ -100,6 +110,7 @@ class GraphRunner:
                     snapshots=snapshots,
                     execution_context=request.execution_context,
                     run_id=str(run.id),
+                    checkpointer=checkpointer,
                 )
             )
             result = self.executor.execute(
@@ -107,6 +118,7 @@ class GraphRunner:
                 run_id=run.id,
                 input_data=current_state,
                 snapshots=snapshots,
+                thread_id=str(checkpoint_thread_id),
             )
             current_state = result.output
             persisted_output = strip_session_fields(
@@ -139,17 +151,24 @@ class GraphRunner:
                     exit_nodes=exit_nodes,
                 )
             )
-            self.repository.mark_run_failed(
-                run,
-                str(e),
-                snapshots,
-                conversation_turn=build_conversation_turn(
-                    persisted_initial_state,
-                    agent_output=persisted_output,
-                    error=str(e),
-                ),
+            error_str = str(e)
+            conversation_turn = build_conversation_turn(
+                persisted_initial_state,
+                agent_output=persisted_output,
+                error=error_str,
             )
-            self.trace_service.mark_failure(trace_session, current_state, str(e))
+            # Logical node failure: node set _error in state → mark as failed (not resumable).
+            # Any other exception (crash, timeout, SIGKILL) → mark as interrupted (resumable).
+            is_logical_failure = bool(current_state.get("_error"))
+            if is_logical_failure:
+                self.repository.mark_run_failed(
+                    run, error_str, snapshots, conversation_turn=conversation_turn
+                )
+            else:
+                self.repository.mark_run_interrupted(
+                    run, error_str, snapshots, conversation_turn=conversation_turn
+                )
+            self.trace_service.mark_failure(trace_session, current_state, error_str)
             raise
         finally:
             self.trace_service.close(trace_session)
@@ -168,7 +187,7 @@ class GraphRunner:
         return report.to_dict()
 
     @staticmethod
-    def _build_request(*, graph_data, snapshots, execution_context, run_id):
+    def _build_request(*, graph_data, snapshots, execution_context, run_id, checkpointer=None):
         from services.runtime.graph_runtime.dtos import LangGraphBuildRequest
 
         return LangGraphBuildRequest(
@@ -176,6 +195,7 @@ class GraphRunner:
             snapshots=snapshots,
             execution_context=execution_context,
             run_id=run_id,
+            checkpointer=checkpointer,
         )
 
     @staticmethod

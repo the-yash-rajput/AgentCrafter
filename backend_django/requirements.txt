@@ -21,6 +21,8 @@ python-dotenv==1.0.1            # still used by db/session.py for DATABASE_URL
 
 # ── LangGraph runtime (unchanged from FastAPI backend) ────────────────────────
 langgraph==1.1.6
+langgraph-checkpoint-postgres==2.0.21   # PostgresSaver for checkpoint-based resumption
+psycopg>=3.2.0,<4.0.0         # psycopg3 required by langgraph-checkpoint-postgres
 langchain==1.2.15
 langchain-openai==1.1.12
 langchain-anthropic==1.4.0

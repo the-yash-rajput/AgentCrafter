@@ -49,6 +49,17 @@ class RunDetailView(APIView):
         return Response(RunResponseSerializer(run).data)
 
 
+class RunResumeView(APIView):
+    """POST /api/runs/{run_id}/resume — resume an interrupted run from its last checkpoint."""
+
+    def post(self, request, run_id):
+        from config.db import managed_db
+        from services.run_service import RunService
+        with managed_db() as db:
+            run = RunService(db).resume_run(run_id)
+        return Response(RunResponseSerializer(run).data, status=status.HTTP_201_CREATED)
+
+
 class RunStreamView(APIView):
     """
     GET /api/runs/{run_id}/stream — Server-Sent Events endpoint.

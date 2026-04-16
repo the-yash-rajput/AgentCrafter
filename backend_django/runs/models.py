@@ -14,6 +14,7 @@ class RunStatus(models.TextChoices):
     RUNNING = "running", "Running"
     SUCCESS = "success", "Success"
     FAILED = "failed", "Failed"
+    INTERRUPTED = "interrupted", "Interrupted"  # mid-execution crash; can resume
 
 
 class Run(models.Model):
@@ -58,6 +59,15 @@ class Run(models.Model):
     # state_snapshots is the list of per-node states used by the /stream endpoint
     state_snapshots = models.JSONField(default=list)
     error = models.TextField(null=True, blank=True)
+    checkpoint_thread_id = models.UUIDField(null=True, blank=True, db_index=True)
+    resumed_from_run = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resume_runs",
+        db_column="resumed_from_run_id",
+    )
     started_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
