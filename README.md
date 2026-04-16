@@ -14,7 +14,7 @@ A full-stack **visual AI workflow builder** powered by LangGraph, where you can 
 └──────────────────┬──────────────────────────────┘
                    │ REST API
 ┌──────────────────▼──────────────────────────────┐
-│  Backend (FastAPI)                              │
+│  Backend (Django + DRF)                         │
 │  - Agent / Node / Edge CRUD                     │
 │  - GraphRunner: DB → LangGraph compilation      │
 │  - Execution engine with state snapshots        │
@@ -53,32 +53,48 @@ docker-compose up --build
 # Frontend → http://localhost:3000
 # Backend API → http://localhost:8000
 # Debugger → localhost:5678 (when BACKEND_DEBUGPY=true)
-# API Docs → http://localhost:8000/docs
+# Health check → http://localhost:8000/health
 ```
 
 ### Database Migrations (Required)
 
-Schema changes are managed with Alembic.
+Schema changes are managed with Django migrations.
 
 ```bash
-cd backend
+cd backend_django
 
 # Apply latest migrations
-alembic upgrade head
+python manage.py migrate
 
 # (Optional) create a new migration
-alembic revision -m "describe change"
+python manage.py makemigrations
 ```
 
 ### Local Development
 
 **Backend:**
 ```bash
-cd backend
-pip install -r requirements.txt
+cd backend_django
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+
 # Make sure PostgreSQL is running, then:
-DATABASE_URL=postgresql://... uvicorn main:app --reload --port 8000
+python manage.py migrate
+./start-backend.sh
 ```
+
+If you prefer not to activate the virtualenv, use the interpreter inside it directly:
+
+```bash
+cd backend_django
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python manage.py migrate
+PYTHON_BIN=.venv/bin/python ./start-backend.sh
+```
+
+Avoid installing backend dependencies into a shared global Python environment. Packages such as `browser-use`, `argilla`, `tensorflow`, and older LangChain integrations can create unrelated resolver conflicts even when this project's own environment is healthy.
 
 ### Remote Debugging
 
@@ -149,7 +165,7 @@ The agent-level state is a shared dictionary passed between all nodes. Define ke
 
 ## API Reference
 
-Interactive docs available at `http://localhost:8000/docs`.
+The Django backend currently exposes REST endpoints under `http://localhost:8000/api/` and a health endpoint at `http://localhost:8000/health`.
 
 Key endpoints:
 | Method | Path | Description |
