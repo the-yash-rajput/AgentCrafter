@@ -1,42 +1,52 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Send } from 'lucide-react'
-import { getAgent, getSession, runInSession, getRun } from '../../api/client'
+import { ArrowLeft, Send, Square } from 'lucide-react'
+import { getAgent, getSession, runInSession, getRun, resumeRun } from '../../api/client'
 
-const pollRun = async (runId, maxAttempts = 60, intervalMs = 1000) => {
+const pollRun = async (runId, signal, maxAttempts = 60, intervalMs = 1000) => {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise(resolve => setTimeout(resolve, intervalMs))
+    if (signal?.aborted) return null  // user paused — stop watching
     const run = await getRun(runId)
-    if (run.status === 'success' || run.status === 'failed') {
+    if (['success', 'failed', 'interrupted'].includes(run.status)) {
       return run
     }
   }
   throw new Error('Run timed out')
 }
 
-const Message = ({ role, content, error }) => {
+const Message = ({ role, content, error, interrupted, paused, runId, onResume }) => {
   const isUser = role === 'user'
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
       <div
         className="max-w-[75%] px-4 py-3 rounded-2xl text-sm leading-relaxed"
         style={{
-          background: isUser ? '#6366f1' : (error ? '#ef444422' : 'var(--surface)'),
-          color: isUser ? '#fff' : (error ? '#ef4444' : 'var(--text)'),
-          border: isUser ? 'none' : `1px solid ${error ? '#ef444444' : 'var(--border2)'}`,
+          background: isUser ? '#6366f1' : (error ? '#ef444422' : paused ? '#f59e0b22' : 'var(--surface)'),
+          color: isUser ? '#fff' : (error ? '#ef4444' : paused ? '#f59e0b' : 'var(--text)'),
+          border: isUser ? 'none' : `1px solid ${error ? '#ef444444' : paused ? '#f59e0b44' : 'var(--border2)'}`,
           borderRadius: isUser ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}
       >
         {content}
+        {interrupted && onResume && (
+          <button
+            onClick={() => onResume(runId)}
+            className="mt-2 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-80"
+            style={{ background: '#6366f1', color: '#fff' }}
+          >
+            ↺ Resume
+          </button>
+        )}
       </div>
     </div>
   )
 }
 
 const TypingIndicator = () => (
-  <div className="flex justify-start mb-4">
+  <div className="flex justify-start">
     <div
       className="px-4 py-3 rounded-2xl"
       style={{ background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: '18px 18px 18px 4px' }}
@@ -63,8 +73,10 @@ export const ChatPage = () => {
   const [typing, setTyping] = useState(false)
   const [agentName, setAgentName] = useState('')
   const [versionNumber, setVersionNumber] = useState(null)
+  const [currentRunId, setCurrentRunId] = useState(null)
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
+  const abortControllerRef = useRef(null)
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -84,7 +96,6 @@ export const ChatPage = () => {
         setVersionNumber(session.version_id)
         if (agent?.name) setAgentName(agent.name)
 
-        // Build message list from conversation_history
         const history = session.conversation_history || []
         const msgs = history.map(msg => ({
           role: msg.role,
@@ -99,6 +110,59 @@ export const ChatPage = () => {
     loadSession()
   }, [agentId, versionId, sessionId])
 
+  const handlePause = useCallback(() => {
+    abortControllerRef.current?.abort()
+  }, [])
+
+  const handleResume = useCallback(async (runId) => {
+    setTyping(true)
+    setMessages(prev => prev.filter(m => !(m.interrupted && m.runId === runId)))
+
+    try {
+      const newRun = await resumeRun(runId)
+      setCurrentRunId(newRun.id)
+
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+      const completedRun = await pollRun(newRun.id, controller.signal)
+
+      if (completedRun === null) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Run is still executing in the background.',
+          paused: true,
+        }])
+      } else if (completedRun.status === 'interrupted') {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Run was interrupted again.',
+          error: true,
+          interrupted: true,
+          runId: completedRun.id,
+        }])
+      } else if (completedRun.status === 'failed') {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: completedRun.error || 'An error occurred.',
+          error: true,
+        }])
+      } else {
+        const updatedSession = await getSession(agentId, versionId, sessionId)
+        const history = updatedSession.conversation_history || []
+        setMessages(history.map(msg => ({ role: msg.role, content: msg.content })))
+      }
+    } catch (e) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: e.message || 'Resume failed.',
+        error: true,
+      }])
+    }
+
+    setTyping(false)
+    setCurrentRunId(null)
+  }, [agentId, versionId, sessionId])
+
   const sendMessage = useCallback(async () => {
     const text = input.trim()
     if (!text || typing) return
@@ -109,16 +173,33 @@ export const ChatPage = () => {
 
     try {
       const run = await runInSession(agentId, versionId, sessionId, { message: text })
-      const completedRun = await pollRun(run.id)
+      setCurrentRunId(run.id)
 
-      if (completedRun.status === 'failed') {
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+      const completedRun = await pollRun(run.id, controller.signal)
+
+      if (completedRun === null) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Run is still executing in the background. You can resume monitoring when it completes.',
+          paused: true,
+        }])
+      } else if (completedRun.status === 'interrupted') {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Run was interrupted before completing.',
+          error: true,
+          interrupted: true,
+          runId: completedRun.id,
+        }])
+      } else if (completedRun.status === 'failed') {
         setMessages(prev => [...prev, {
           role: 'assistant',
           content: completedRun.error || 'An error occurred.',
           error: true,
         }])
       } else {
-        // Reload conversation history from the session — same source as a page refresh
         const updatedSession = await getSession(agentId, versionId, sessionId)
         const history = updatedSession.conversation_history || []
         setMessages(history.map(msg => ({ role: msg.role, content: msg.content })))
@@ -132,6 +213,7 @@ export const ChatPage = () => {
     }
 
     setTyping(false)
+    setCurrentRunId(null)
   }, [agentId, input, sessionId, typing, versionId])
 
   const handleKeyDown = useCallback((e) => {
@@ -194,9 +276,22 @@ export const ChatPage = () => {
             </div>
           )}
           {messages.map((msg, i) => (
-            <Message key={i} role={msg.role} content={msg.content} error={msg.error} />
+            <Message key={i} {...msg} onResume={handleResume} />
           ))}
-          {typing && <TypingIndicator />}
+          {typing && (
+            <div className="flex items-center gap-3 mb-4">
+              <TypingIndicator />
+              <button
+                onClick={handlePause}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-80"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border2)', color: 'var(--text-muted)' }}
+                title="Stop watching this run"
+              >
+                <Square size={10} fill="currentColor" />
+                Pause
+              </button>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
       </div>
