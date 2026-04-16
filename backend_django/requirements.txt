@@ -41,8 +41,3 @@ pytest-django==4.8.*
 
 # ── Development ───────────────────────────────────────────────────────────────
 debugpy==1.8.16
-
-# Removed from FastAPI backend:
-#   fastapi            — replaced by Django + DRF
-#   sse-starlette      — replaced by Django StreamingHttpResponse
-#   python-multipart   — not needed (DRF handles multipart if required)
