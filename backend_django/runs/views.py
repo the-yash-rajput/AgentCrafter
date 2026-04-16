@@ -5,6 +5,7 @@ Service imports are lazy (inside each method) to avoid pulling in LangGraph
 at URL-load time.
 """
 import json
+import threading
 
 from django.http import StreamingHttpResponse
 from rest_framework import status
@@ -46,6 +47,55 @@ class RunDetailView(APIView):
         from services.run_service import RunService
         with managed_db() as db:
             run = RunService(db).get_run(run_id)
+        return Response(RunResponseSerializer(run).data)
+
+
+class RunResumeView(APIView):
+    """POST /api/runs/{run_id}/resume — resume an interrupted run from its last checkpoint."""
+
+    def post(self, request, run_id):
+        from config.db import managed_db
+        from services.run_service import RunService
+
+        with managed_db() as db:
+            new_run = RunService(db).resume_run(run_id)
+
+        new_run_id = new_run.id
+        agent_id = new_run.agent_id
+        version_id = new_run.version_id
+        session_id = new_run.session_id
+        checkpoint_thread_id = new_run.checkpoint_thread_id
+        effective_input = new_run._runtime_effective_input
+        resumed_from_run_id = new_run._runtime_resumed_from_run_id
+
+        def _execute():
+            from config.db import managed_db as bg_managed_db
+            from services.run_service import RunService as BgRunService
+            with bg_managed_db() as bg_db:
+                BgRunService(bg_db).execute_run_background(
+                    run_id=new_run_id,
+                    agent_id=agent_id,
+                    version_id=version_id,
+                    session_id=session_id,
+                    effective_input=effective_input,
+                    conversation_history=[],
+                    checkpoint_thread_id=checkpoint_thread_id,
+                    resumed_from_run_id=resumed_from_run_id,
+                )
+
+        threading.Thread(target=_execute, daemon=True).start()
+
+        return Response(RunResponseSerializer(new_run).data, status=status.HTTP_201_CREATED)
+
+
+class RunPauseView(APIView):
+    """POST /api/runs/{run_id}/pause — signal a running run to stop between nodes."""
+
+    def post(self, request, run_id):
+        from config.db import managed_db
+        from services.run_service import RunService
+        with managed_db() as db:
+            run = RunService(db).pause_run(run_id)
         return Response(RunResponseSerializer(run).data)
 
 

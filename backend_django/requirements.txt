@@ -6,7 +6,7 @@ django-environ==0.11.*          # .env loading (replaces python-dotenv)
 django-cors-headers==4.3.*      # CORS middleware (replaces FastAPI CORSMiddleware)
 
 # ── Database ──────────────────────────────────────────────────────────────────
-psycopg2-binary==2.9.9          # PostgreSQL adapter (unchanged)
+psycopg2-binary==2.9.11         # Python 3.13-compatible PostgreSQL adapter
 
 # SQLAlchemy is kept because the service layer uses it for all data access.
 # Django ORM is used only for migrations and admin.
@@ -15,12 +15,14 @@ sqlalchemy>=2.0.36          # 2.0.30 is incompatible with Python 3.13
 # ── Pydantic (kept for service layer) ─────────────────────────────────────────
 # The service layer schemas (schemas/schemas.py) and Pydantic models are reused
 # unchanged. Only the HTTP boundary uses DRF serializers instead.
-pydantic==2.7.4
-pydantic-settings==2.2.1
+pydantic==2.13.0               # 2.7.x does not ship Python 3.13-compatible wheels
+pydantic-settings==2.13.1
 python-dotenv==1.0.1            # still used by db/session.py for DATABASE_URL
 
 # ── LangGraph runtime (unchanged from FastAPI backend) ────────────────────────
 langgraph==1.1.6
+langgraph-checkpoint-postgres==2.0.21   # PostgresSaver for checkpoint-based resumption
+psycopg>=3.2.0,<4.0.0         # psycopg3 required by langgraph-checkpoint-postgres
 langchain==1.2.15
 langchain-openai==1.1.12
 langchain-anthropic==1.4.0

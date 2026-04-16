@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+import uuid
 from datetime import datetime
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session, load_only
 
 from models import Agent, Edge, Node, Run, RunStatus
@@ -18,7 +21,7 @@ class _VersionedAgentProxy:
         self.state_schema = version.state_schema
         self.entry_node = version.entry_node
         self.exit_nodes = version.exit_nodes
-from services.exceptions import NotFoundError
+from services.exceptions import NotFoundError, ValidationError
 from services.runtime.graph_runtime.dtos import GraphFetchResult
 from type_defs import StatePayload
 
@@ -160,6 +163,8 @@ class GraphRuntimeRepository:
         version_id: int | None = None,
         session_id: int | None = None,
         conversation_history: list[dict[str, str]] | None = None,
+        checkpoint_thread_id: uuid.UUID | None = None,
+        resumed_from_run_id: int | None = None,
     ) -> Run:
         run = Run(
             agent_id=agent_id,
@@ -170,6 +175,8 @@ class GraphRuntimeRepository:
             output_data={},
             conversation_turn=[],
             state_snapshots=[],
+            checkpoint_thread_id=checkpoint_thread_id,
+            resumed_from_run_id=resumed_from_run_id,
             started_at=datetime.utcnow(),
         )
         self.db.add(run)
@@ -205,6 +212,66 @@ class GraphRuntimeRepository:
         run.state_snapshots = snapshots
         run.completed_at = datetime.utcnow()
         self.db.commit()
+
+    def mark_run_interrupted(
+        self,
+        run: Run,
+        error: str,
+        snapshots: list[dict],
+        *,
+        conversation_turn: list[dict[str, str]] | None = None,
+    ) -> None:
+        run.status = RunStatus.interrupted
+        run.error = error
+        run.conversation_turn = list(conversation_turn or [])
+        run.state_snapshots = snapshots
+        run.completed_at = datetime.utcnow()
+        self.db.commit()
+
+    def check_pause_requested(self, run_id: int) -> bool:
+        """Return True if the run has pause_requested=True (checked between nodes)."""
+        row = self.db.execute(
+            text("SELECT pause_requested FROM runs WHERE id = :run_id"),
+            {"run_id": run_id},
+        ).fetchone()
+        return bool(row and row[0])
+
+    def persist_snapshot(self, run_id: int, snapshot: dict) -> None:
+        """Atomically append one snapshot to Run.state_snapshots in the DB.
+
+        Called immediately after each node so that snapshots survive a crash.
+        Uses PostgreSQL JSONB concatenation (||) for an atomic append.
+        """
+        # Use CAST(:snap AS jsonb) instead of :snap::jsonb — the :: operator
+        # conflicts with SQLAlchemy/psycopg2 named-parameter parsing.
+        self.db.execute(
+            text(
+                "UPDATE runs SET state_snapshots = state_snapshots || CAST(:snap AS jsonb) "
+                "WHERE id = :run_id"
+            ),
+            {"snap": json.dumps([snapshot]), "run_id": run_id},
+        )
+        self.db.commit()
+
+    def get_run_for_resume(self, run_id: int) -> Run:
+        """Return an interrupted run ready to be resumed.
+
+        Raises NotFoundError if the run does not exist.
+        Raises ValidationError if the run is not in the 'interrupted' state
+        or has no checkpoint_thread_id.
+        """
+        run = self.db.query(Run).filter(Run.id == run_id).first()
+        if not run:
+            raise NotFoundError("Run not found")
+        if run.status != RunStatus.interrupted:
+            raise ValidationError(
+                f"Run {run_id} cannot be resumed: status is '{run.status.value}', expected 'interrupted'"
+            )
+        if run.checkpoint_thread_id is None:
+            raise ValidationError(
+                f"Run {run_id} has no checkpoint_thread_id and cannot be resumed"
+            )
+        return run
 
     def get_run_or_404(self, run_id: int) -> Run:
         run = self.db.query(Run).filter(Run.id == run_id).first()

@@ -1,7 +1,6 @@
 #!/bin/sh
 # Start script for the Django backend.
-# Mirrors the FastAPI start-backend.sh but uses gunicorn/uvicorn with
-# Django's WSGI/ASGI application instead of uvicorn main:app.
+# Uses the active Python interpreter to run Django migrations and uvicorn.
 
 set -eu
 
@@ -15,14 +14,28 @@ DEBUGPY_PORT="${BACKEND_DEBUGPY_PORT:-5678}"
 DEBUGPY_WAIT="${BACKEND_DEBUGPY_WAIT_FOR_CLIENT:-false}"
 DEBUGPY_SUBPROCESS="${BACKEND_DEBUGPY_SUBPROCESS:-false}"
 
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [ -z "$PYTHON_BIN" ]; then
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  else
+    echo "Python interpreter not found. Set PYTHON_BIN or install python/python3." >&2
+    exit 127
+  fi
+fi
+
 # Apply any pending migrations before starting (safe to run on every boot)
 echo "Running Django migrations..."
-python manage.py migrate --noinput
+"$PYTHON_BIN" manage.py migrate --noinput
 
 # Use uvicorn + Django ASGI for SSE streaming support
-set -- uvicorn config.asgi:application --host "$HOST" --port "$PORT" --log-level "$LOG_LEVEL"
+set -- "$PYTHON_BIN" -m uvicorn config.asgi:application --host "$HOST" --port "$PORT" --log-level "$LOG_LEVEL"
+UVICORN_RELOAD_ARG=""
 
 if [ "$RELOAD" = "true" ]; then
+  UVICORN_RELOAD_ARG="--reload"
   set -- "$@" --reload
 fi
 
@@ -31,16 +44,16 @@ if [ "$DEBUGPY_ENABLED" = "true" ]; then
 
   if [ "$DEBUGPY_WAIT" = "true" ]; then
     if [ "$DEBUGPY_SUBPROCESS" = "false" ]; then
-      exec python -Xfrozen_modules=off -m debugpy --listen "${DEBUGPY_HOST}:${DEBUGPY_PORT}" --configure-subProcess false --wait-for-client -m "$@"
+      exec "$PYTHON_BIN" -Xfrozen_modules=off -m debugpy --listen "${DEBUGPY_HOST}:${DEBUGPY_PORT}" --configure-subProcess false --wait-for-client -m uvicorn config.asgi:application --host "$HOST" --port "$PORT" --log-level "$LOG_LEVEL" $UVICORN_RELOAD_ARG
     fi
-    exec python -Xfrozen_modules=off -m debugpy --listen "${DEBUGPY_HOST}:${DEBUGPY_PORT}" --wait-for-client -m "$@"
+    exec "$PYTHON_BIN" -Xfrozen_modules=off -m debugpy --listen "${DEBUGPY_HOST}:${DEBUGPY_PORT}" --wait-for-client -m uvicorn config.asgi:application --host "$HOST" --port "$PORT" --log-level "$LOG_LEVEL" $UVICORN_RELOAD_ARG
   fi
 
   if [ "$DEBUGPY_SUBPROCESS" = "false" ]; then
-    exec python -Xfrozen_modules=off -m debugpy --listen "${DEBUGPY_HOST}:${DEBUGPY_PORT}" --configure-subProcess false -m "$@"
+    exec "$PYTHON_BIN" -Xfrozen_modules=off -m debugpy --listen "${DEBUGPY_HOST}:${DEBUGPY_PORT}" --configure-subProcess false -m uvicorn config.asgi:application --host "$HOST" --port "$PORT" --log-level "$LOG_LEVEL" $UVICORN_RELOAD_ARG
   fi
 
-  exec python -Xfrozen_modules=off -m debugpy --listen "${DEBUGPY_HOST}:${DEBUGPY_PORT}" -m "$@"
+  exec "$PYTHON_BIN" -Xfrozen_modules=off -m debugpy --listen "${DEBUGPY_HOST}:${DEBUGPY_PORT}" -m uvicorn config.asgi:application --host "$HOST" --port "$PORT" --log-level "$LOG_LEVEL" $UVICORN_RELOAD_ARG
 fi
 
 exec "$@"

@@ -27,6 +27,8 @@ class RunResponseSerializer(serializers.Serializer):
     conversation_turn = serializers.JSONField()
     state_snapshots = serializers.JSONField()
     error = serializers.CharField(allow_null=True)
+    checkpoint_thread_id = serializers.UUIDField(allow_null=True)
+    resumed_from_run_id = serializers.IntegerField(allow_null=True)
     started_at = serializers.DateTimeField()
     completed_at = serializers.DateTimeField(allow_null=True)
 

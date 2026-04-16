@@ -47,6 +47,15 @@ class LangGraphBuilder:
             except ValueError:
                 continue
 
+            persist_fn = None
+            check_pause_fn = None
+            if request.run_id is not None and request.checkpointer is not None:
+                from services.runtime.graph_runtime.fetcher import GraphRuntimeRepository
+                _repo = GraphRuntimeRepository(self.db)
+                _run_id = int(request.run_id)
+                persist_fn = lambda snap, _r=_repo, _id=_run_id: _r.persist_snapshot(_id, snap)
+                check_pause_fn = lambda _r=_repo, _id=_run_id: _r.check_pause_requested(_id)
+
             workflow.add_node(
                 node.name,
                 self._wrap_node(
@@ -54,6 +63,8 @@ class LangGraphBuilder:
                     fn,
                     request.snapshots,
                     execution_context=request.execution_context,
+                    persist_snapshot=persist_fn,
+                    check_pause=check_pause_fn,
                 ),
             )
             node_map[node.name] = node
@@ -124,7 +135,7 @@ class LangGraphBuilder:
             workflow.add_edge(node_name, END)
 
         return CompiledGraphArtifact(
-            graph=workflow.compile(),
+            graph=workflow.compile(checkpointer=request.checkpointer),
             executable_node_names=set(node_map),
         )
 
@@ -135,6 +146,8 @@ class LangGraphBuilder:
         snapshots: list[dict],
         *,
         execution_context: ExecutionContext | None = None,
+        persist_snapshot=None,
+        check_pause=None,
     ):
         def wrapped(state: StatePayload) -> StatePayload:
             before = dict(state)
@@ -158,18 +171,24 @@ class LangGraphBuilder:
                     result = {}
 
                 after = {**before, **result}
-                snapshots.append(
-                    {
-                        "node_id": str(node.id),
-                        "node_name": node.name,
-                        "node_type": node.type.value,
-                        "node_subtype": node.subtype.value,
-                        # "node_output": result,
-                        "state_before": before,
-                        "state_after": after,
-                        "timestamp": datetime.utcnow().isoformat(),
-                    }
-                )
+                snapshot = {
+                    "node_id": str(node.id),
+                    "node_name": node.name,
+                    "node_type": node.type.value,
+                    "node_subtype": node.subtype.value,
+                    "state_before": before,
+                    "state_after": after,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+                snapshots.append(snapshot)
+                # Persist to DB immediately so snapshots survive a mid-run crash
+                if persist_snapshot is not None:
+                    persist_snapshot(snapshot)
+
+                # Check if user requested a pause between nodes
+                if check_pause is not None and check_pause():
+                    from services.exceptions import PauseRequestedError
+                    raise PauseRequestedError(f"Run paused by user after node '{node.name}'")
 
                 if "_error" in result and result["_error"]:
                     raise RuntimeError(result["_error"])

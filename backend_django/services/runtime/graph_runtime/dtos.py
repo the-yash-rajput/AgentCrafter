@@ -51,6 +51,7 @@ class LangGraphBuildRequest:
     snapshots: list[dict[str, Any]] = field(default_factory=list)
     execution_context: ExecutionContext = field(default_factory=dict)
     run_id: str | None = None
+    checkpointer: Any | None = None  # PostgresSaver instance; None disables checkpointing
 
 
 @dataclass(slots=True)

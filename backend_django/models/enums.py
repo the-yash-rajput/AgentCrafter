@@ -51,3 +51,4 @@ class RunStatus(str, enum.Enum):
     running = "running"
     success = "success"
     failed = "failed"
+    interrupted = "interrupted"  # mid-execution crash; checkpoint saved, can resume
