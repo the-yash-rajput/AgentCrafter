@@ -48,11 +48,13 @@ class LangGraphBuilder:
                 continue
 
             persist_fn = None
+            check_pause_fn = None
             if request.run_id is not None and request.checkpointer is not None:
                 from services.runtime.graph_runtime.fetcher import GraphRuntimeRepository
                 _repo = GraphRuntimeRepository(self.db)
                 _run_id = int(request.run_id)
                 persist_fn = lambda snap, _r=_repo, _id=_run_id: _r.persist_snapshot(_id, snap)
+                check_pause_fn = lambda _r=_repo, _id=_run_id: _r.check_pause_requested(_id)
 
             workflow.add_node(
                 node.name,
@@ -62,6 +64,7 @@ class LangGraphBuilder:
                     request.snapshots,
                     execution_context=request.execution_context,
                     persist_snapshot=persist_fn,
+                    check_pause=check_pause_fn,
                 ),
             )
             node_map[node.name] = node
@@ -144,6 +147,7 @@ class LangGraphBuilder:
         *,
         execution_context: ExecutionContext | None = None,
         persist_snapshot=None,
+        check_pause=None,
     ):
         def wrapped(state: StatePayload) -> StatePayload:
             before = dict(state)
@@ -180,6 +184,11 @@ class LangGraphBuilder:
                 # Persist to DB immediately so snapshots survive a mid-run crash
                 if persist_snapshot is not None:
                     persist_snapshot(snapshot)
+
+                # Check if user requested a pause between nodes
+                if check_pause is not None and check_pause():
+                    from services.exceptions import PauseRequestedError
+                    raise PauseRequestedError(f"Run paused by user after node '{node.name}'")
 
                 if "_error" in result and result["_error"]:
                     raise RuntimeError(result["_error"])

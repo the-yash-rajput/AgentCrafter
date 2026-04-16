@@ -43,6 +43,7 @@ class GraphRunner:
         conversation_history: Optional[list[dict[str, str]]] = None,
         checkpoint_thread_id: Optional[uuid.UUID] = None,
         resumed_from_run_id: Optional[int] = None,
+        existing_run=None,
     ) -> dict:
         base_execution_context = dict(execution_context or {})
         resolved_conversation_history = normalize_conversation_history(
@@ -82,14 +83,17 @@ class GraphRunner:
         if checkpoint_thread_id is None:
             checkpoint_thread_id = uuid.uuid4()
 
-        run = self.repository.create_run(
-            request.agent_id,
-            persisted_initial_state,
-            version_id=version_id,
-            session_id=request.session_id,
-            checkpoint_thread_id=checkpoint_thread_id,
-            resumed_from_run_id=resumed_from_run_id,
-        )
+        if existing_run is not None:
+            run = existing_run
+        else:
+            run = self.repository.create_run(
+                request.agent_id,
+                persisted_initial_state,
+                version_id=version_id,
+                session_id=request.session_id,
+                checkpoint_thread_id=checkpoint_thread_id,
+                resumed_from_run_id=resumed_from_run_id,
+            )
         snapshots: list[dict] = []
         current_state = dict(initial_state or {})
         trace_session = self.trace_service.start(

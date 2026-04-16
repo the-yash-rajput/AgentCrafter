@@ -19,3 +19,7 @@ class ValidationError(ServiceError):
 
 class ConflictError(ServiceError):
     pass
+
+
+class PauseRequestedError(Exception):
+    """Raised between graph nodes when pause_requested=True is detected."""

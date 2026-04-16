@@ -1,5 +1,6 @@
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Column,
     DateTime,
     Enum as SAEnum,
@@ -32,6 +33,7 @@ class Run(Base):
     error = Column(Text, nullable=True)
     checkpoint_thread_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     resumed_from_run_id = Column(BigInteger, ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
+    pause_requested = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     started_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
 

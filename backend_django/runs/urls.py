@@ -17,6 +17,9 @@ urlpatterns = [
     # Resume an interrupted run from its last checkpoint
     path("runs/<int:run_id>/resume", views.RunResumeView.as_view()),
 
+    # Pause a running run (sets pause_requested flag, checked between nodes)
+    path("runs/<int:run_id>/pause", views.RunPauseView.as_view()),
+
     # SSE streaming endpoint
     path("runs/<int:run_id>/stream", views.RunStreamView.as_view()),
 ]

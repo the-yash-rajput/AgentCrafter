@@ -228,6 +228,14 @@ class GraphRuntimeRepository:
         run.completed_at = datetime.utcnow()
         self.db.commit()
 
+    def check_pause_requested(self, run_id: int) -> bool:
+        """Return True if the run has pause_requested=True (checked between nodes)."""
+        row = self.db.execute(
+            text("SELECT pause_requested FROM runs WHERE id = :run_id"),
+            {"run_id": run_id},
+        ).fetchone()
+        return bool(row and row[0])
+
     def persist_snapshot(self, run_id: int, snapshot: dict) -> None:
         """Atomically append one snapshot to Run.state_snapshots in the DB.
 

@@ -68,6 +68,7 @@ class Run(models.Model):
         related_name="resume_runs",
         db_column="resumed_from_run_id",
     )
+    pause_requested = models.BooleanField(default=False)
     started_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
