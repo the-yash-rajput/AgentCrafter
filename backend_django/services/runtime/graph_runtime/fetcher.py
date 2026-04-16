@@ -234,9 +234,11 @@ class GraphRuntimeRepository:
         Called immediately after each node so that snapshots survive a crash.
         Uses PostgreSQL JSONB concatenation (||) for an atomic append.
         """
+        # Use CAST(:snap AS jsonb) instead of :snap::jsonb — the :: operator
+        # conflicts with SQLAlchemy/psycopg2 named-parameter parsing.
         self.db.execute(
             text(
-                "UPDATE runs SET state_snapshots = state_snapshots || :snap::jsonb "
+                "UPDATE runs SET state_snapshots = state_snapshots || CAST(:snap AS jsonb) "
                 "WHERE id = :run_id"
             ),
             {"snap": json.dumps([snapshot]), "run_id": run_id},

@@ -144,6 +144,13 @@ class GraphRunner:
             }
 
         except Exception as e:
+            # If a node's persist_snapshot call failed, the SQLAlchemy session may
+            # be in an aborted transaction. Roll back first so the status update works.
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+
             persisted_output = strip_session_fields(
                 self._resolve_final_output(
                     current_state,

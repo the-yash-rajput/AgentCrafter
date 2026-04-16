@@ -11,12 +11,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # The run_status column is a native PostgreSQL ENUM created by SQLAlchemy.
-        # Django's AlterField only updates metadata — we must extend the PG enum type manually.
-        migrations.RunSQL(
-            sql="ALTER TYPE run_status ADD VALUE IF NOT EXISTS 'interrupted';",
-            reverse_sql=migrations.RunSQL.noop,
-        ),
         migrations.AddField(
             model_name='run',
             name='checkpoint_thread_id',
