@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Send, Square } from 'lucide-react'
-import { getAgent, getSession, runInSession, getRun, resumeRun } from '../../api/client'
+import { getAgent, getSession, runInSession, getRun, resumeRun, pauseRun } from '../../api/client'
 
 const pollRun = async (runId, signal, maxAttempts = 60, intervalMs = 1000) => {
   for (let i = 0; i < maxAttempts; i++) {
@@ -110,9 +110,13 @@ export const ChatPage = () => {
     loadSession()
   }, [agentId, versionId, sessionId])
 
-  const handlePause = useCallback(() => {
-    abortControllerRef.current?.abort()
-  }, [])
+  const handlePause = useCallback(async () => {
+    if (currentRunId) {
+      try { await pauseRun(currentRunId) } catch (_) {}
+      // Keep polling — when the run transitions to 'interrupted' the normal
+      // flow will show the Resume button automatically.
+    }
+  }, [currentRunId])
 
   const handleResume = useCallback(async (runId) => {
     setTyping(true)
