@@ -112,8 +112,9 @@ def _build_langfuse_invoke_config(
     node_name: Optional[str],
     settings,
     prompt_metadata: JSONMapping,
+    session_id: Optional[str] = None,
 ) -> JSONMapping:
-    langfuse_session_id = str(state.get(SESSION_ID_KEY) or run_id or "").strip() or None
+    langfuse_session_id = str(state.get(SESSION_ID_KEY) or session_id or "").strip() or None
     shared_langfuse_handler = (execution_context or {}).get("langfuse_handler")
     shared_langfuse_metadata = dict((execution_context or {}).get("langfuse_metadata") or {})
     langfuse_handler = shared_langfuse_handler or langfuse_callback_handler()
@@ -142,6 +143,7 @@ def _run_agent_llm_node(
     agent_name: Optional[str],
     run_id: Optional[str],
     node_name: Optional[str],
+    session_id: Optional[str] = None,
 ) -> StatePayload:
     settings = resolve_llm_settings(config)
     system_prompt, prompt_metadata = resolve_llm_system_prompt(config, state)
@@ -194,6 +196,7 @@ def _run_agent_llm_node(
             node_name=node_name,
             settings=settings,
             prompt_metadata=prompt_metadata,
+            session_id=session_id,
         )
 
         result = runtime_agent.invoke(
@@ -254,6 +257,7 @@ def build_agent_llm_node(
     agent_name: Optional[str] = None,
     run_id: Optional[str] = None,
     node_name: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> NodeRunner:
     requested_provider = str(config.get("provider", "azure_openai")).strip().lower()
     if requested_provider not in SUPPORTED_AGENT_PROVIDERS or not _agent_runtime_is_available():
@@ -265,6 +269,7 @@ def build_agent_llm_node(
             agent_name=agent_name,
             run_id=run_id,
             node_name=node_name,
+            session_id=session_id,
         )
 
     return partial(
@@ -274,4 +279,5 @@ def build_agent_llm_node(
         agent_name=agent_name,
         run_id=run_id,
         node_name=node_name,
+        session_id=session_id,
     )

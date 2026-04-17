@@ -67,6 +67,7 @@ def build_chat_llm_node(
     agent_name: Optional[str] = None,
     run_id: Optional[str] = None,
     node_name: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> NodeRunner:
     def llm_node(state: StatePayload) -> StatePayload:
         settings = resolve_llm_settings(config)
@@ -101,7 +102,7 @@ def build_chat_llm_node(
                     "llm_runtime": "chat_model",
                 },
             )
-            langfuse_session_id = str(state.get(SESSION_ID_KEY) or run_id or "").strip() or None
+            langfuse_session_id = str(state.get(SESSION_ID_KEY) or session_id or "").strip() or None
             shared_langfuse_handler = (execution_context or {}).get("langfuse_handler")
             shared_langfuse_metadata = dict((execution_context or {}).get("langfuse_metadata") or {})
             langfuse_handler = shared_langfuse_handler or langfuse_callback_handler()

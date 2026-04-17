@@ -107,6 +107,7 @@ class GraphRunner:
         request.execution_context["langfuse_metadata"] = dict(trace_session.metadata or {})
         exit_nodes = set(get_agent_exit_nodes(graph_data.agent))
 
+        session_id_str = str(run.session_id) if run.session_id else None
         checkpointer = get_checkpointer()
         try:
             compiled_graph = self.builder.compile(
@@ -116,6 +117,7 @@ class GraphRunner:
                     execution_context=request.execution_context,
                     run_id=str(run.id),
                     checkpointer=checkpointer,
+                    session_id=session_id_str,
                 )
             )
             result = self.executor.execute(
@@ -221,7 +223,7 @@ class GraphRunner:
         return report.to_dict()
 
     @staticmethod
-    def _build_request(*, graph_data, snapshots, execution_context, run_id, checkpointer=None):
+    def _build_request(*, graph_data, snapshots, execution_context, run_id, checkpointer=None, session_id=None):
         from services.runtime.graph_runtime.dtos import LangGraphBuildRequest
 
         return LangGraphBuildRequest(
@@ -230,6 +232,7 @@ class GraphRunner:
             execution_context=execution_context,
             run_id=run_id,
             checkpointer=checkpointer,
+            session_id=session_id,
         )
 
     @staticmethod

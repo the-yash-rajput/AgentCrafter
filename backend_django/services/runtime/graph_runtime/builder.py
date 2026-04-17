@@ -43,6 +43,7 @@ class LangGraphBuilder:
                     agent_name=agent.name,
                     run_id=request.run_id,
                     node_name=node.name,
+                    session_id=request.session_id,
                 )
             except ValueError:
                 continue
