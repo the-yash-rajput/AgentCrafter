@@ -429,6 +429,25 @@ const LLMNodeConfig = ({ config, onChange }) => {
               <code className="text-indigo-400">{cfg.confidence_key || 'confidence'}</code> field (0.0 – 1.0).
               When the value falls below the threshold the run pauses for human review.
             </p>
+            <Field label="SLA Timeout (seconds)">
+              <Input
+                type="number"
+                value={cfg.sla_timeout_seconds ?? ''}
+                onChange={v => set('sla_timeout_seconds', v === '' ? null : parseInt(v, 10))}
+                placeholder="Leave empty for no timeout"
+              />
+            </Field>
+            <Field label="On Timeout">
+              <select
+                value={cfg.timeout_action || 'auto_approve'}
+                onChange={e => set('timeout_action', e.target.value)}
+                className="w-full px-2 py-1.5 rounded text-xs outline-none"
+                style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+              >
+                <option value="auto_approve">Auto-approve original response</option>
+                <option value="auto_fail">Fail the run</option>
+              </select>
+            </Field>
           </>
         )}
       </Section>

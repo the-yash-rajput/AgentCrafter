@@ -30,6 +30,8 @@ class RunResponseSerializer(serializers.Serializer):
     checkpoint_thread_id = serializers.UUIDField(allow_null=True)
     resumed_from_run_id = serializers.IntegerField(allow_null=True)
     interrupt_metadata = serializers.JSONField(allow_null=True)
+    sla_timeout_at = serializers.DateTimeField(allow_null=True)
+    review_metadata = serializers.JSONField(allow_null=True)
     started_at = serializers.DateTimeField()
     completed_at = serializers.DateTimeField(allow_null=True)
 

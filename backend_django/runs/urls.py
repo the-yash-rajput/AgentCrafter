@@ -20,6 +20,9 @@ urlpatterns = [
     # Pause a running run (sets pause_requested flag, checked between nodes)
     path("runs/<int:run_id>/pause", views.RunPauseView.as_view()),
 
+    # Enforce SLA timeout on an interrupted run (called by frontend countdown or manually)
+    path("runs/<int:run_id>/expire", views.RunExpireView.as_view()),
+
     # SSE streaming endpoint
     path("runs/<int:run_id>/stream", views.RunStreamView.as_view()),
 ]

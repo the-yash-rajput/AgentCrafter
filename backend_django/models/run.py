@@ -35,6 +35,8 @@ class Run(Base):
     resumed_from_run_id = Column(BigInteger, ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
     pause_requested = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     interrupt_metadata = Column(JSONB, nullable=True)
+    sla_timeout_at = Column(DateTime(timezone=False), nullable=True, index=True)
+    review_metadata = Column(JSONB, nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
 

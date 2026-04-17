@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -185,10 +186,17 @@ class GraphRunner:
                 interrupt_payload = None
                 if getattr(e, "interrupts", None):
                     interrupt_payload = e.interrupts[0].value
+                sla_timeout_at = None
+                if isinstance(interrupt_payload, dict) and interrupt_payload.get("sla_timeout_seconds"):
+                    from datetime import timedelta
+                    sla_timeout_at = datetime.utcnow() + timedelta(
+                        seconds=int(interrupt_payload["sla_timeout_seconds"])
+                    )
                 self.repository.mark_run_interrupted(
                     run, error_str, snapshots,
                     conversation_turn=conversation_turn,
                     interrupt_metadata=interrupt_payload,
+                    sla_timeout_at=sla_timeout_at,
                 )
                 self.trace_service.mark_failure(trace_session, current_state, error_str)
                 return {"status": "interrupted", "output": persisted_output}

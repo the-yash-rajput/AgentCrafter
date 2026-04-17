@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -112,7 +113,7 @@ class RunService:
         if run and run.conversation_turn and run.status == RunStatus.success:
             SessionService(self.db).append_conversation_turn(session_id, run.conversation_turn)
 
-    def resume_run(self, run_id: int, human_response=None) -> Run:
+    def resume_run(self, run_id: int, human_response=None, human_notes=None) -> Run:
         """Resume an interrupted run from its last LangGraph checkpoint.
 
         Creates a new Run record that shares the same checkpoint_thread_id so
@@ -121,9 +122,29 @@ class RunService:
 
         For confidence-check HITL interruptions, human_response is the approved or
         overridden value to pass back to the interrupted node via Command(resume=...).
+        Writes review_metadata to the interrupted run as an audit trail before creating
+        the new run.
         """
         repo = GraphRuntimeRepository(self.db)
         interrupted_run = repo.get_run_for_resume(run_id)
+
+        # --- Audit trail: record the human decision on the interrupted run ---
+        # Skip if already written (e.g. by _auto_resolve_timeout before calling resume_run).
+        if not interrupted_run.review_metadata:
+            original_response = dict(interrupted_run.interrupt_metadata or {}).get("llm_response")
+            action = "approved" if human_response is None or human_response == original_response else "overridden"
+            review_duration = (
+                int((datetime.utcnow() - interrupted_run.completed_at.replace(tzinfo=None)).total_seconds())
+                if interrupted_run.completed_at else None
+            )
+            interrupted_run.review_metadata = {
+                "action": action,
+                "human_response": human_response,
+                "human_notes": human_notes,
+                "reviewed_at": datetime.utcnow().isoformat(),
+                "review_duration_seconds": review_duration,
+            }
+            self.db.commit()
 
         checkpoint_thread_id = interrupted_run.checkpoint_thread_id
         persisted_input = dict(interrupted_run.input_data or {})
@@ -183,6 +204,68 @@ class RunService:
             .limit(limit)
             .all()
         )
+
+    def _get_expired_sla_runs(self) -> list[Run]:
+        """Return all interrupted runs whose SLA deadline has passed and are not yet resolved."""
+        now = datetime.utcnow()
+        return (
+            self.db.query(Run)
+            .filter(
+                Run.status == RunStatus.interrupted,
+                Run.sla_timeout_at.isnot(None),
+                Run.sla_timeout_at <= now,
+                Run.review_metadata.is_(None),
+            )
+            .all()
+        )
+
+    def enforce_sla_timeouts(self) -> list[int]:
+        """Find all interrupted runs past their SLA deadline and auto-resolve them.
+
+        Returns the list of run IDs that were resolved. Intended to be called from
+        the enforce_hitl_sla management command (cron).
+        """
+        expired_runs = self._get_expired_sla_runs()
+        resolved = []
+        for run in expired_runs:
+            self._auto_resolve_timeout(run)
+            resolved.append(run.id)
+        return resolved
+
+    def _auto_resolve_timeout(self, run: Run) -> Run | None:
+        """Auto-resolve a single SLA-expired interrupted run.
+
+        For auto_fail: marks the run as failed immediately (no graph execution).
+        For auto_approve: writes review_metadata then calls resume_run() to create
+        a new run. The caller must spawn the background execution thread.
+        Returns the new run for auto_approve, None for auto_fail.
+        """
+        meta = dict(run.interrupt_metadata or {})
+        action = meta.get("timeout_action", "auto_approve")
+        now_iso = datetime.utcnow().isoformat()
+
+        if action == "auto_fail":
+            run.review_metadata = {
+                "action": "auto_failed",
+                "human_notes": "Automatically failed: SLA deadline exceeded with no human response.",
+                "reviewed_at": now_iso,
+            }
+            run.status = RunStatus.failed
+            run.error = "HITL SLA timeout: no human review received within the allowed window."
+            run.completed_at = datetime.utcnow()
+            self.db.commit()
+            return None
+        else:
+            # auto_approve: resume with the original LLM response
+            llm_response = meta.get("llm_response")
+            run.review_metadata = {
+                "action": "auto_approved",
+                "human_response": llm_response,
+                "human_notes": "Automatically approved: SLA deadline exceeded with no human response.",
+                "reviewed_at": now_iso,
+            }
+            self.db.commit()
+            return self.resume_run(run.id, human_response=llm_response)
 
     def validate_agent(self, agent_id: int) -> dict:
         self._get_agent_or_404(agent_id)

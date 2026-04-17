@@ -1,7 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Send, Square } from 'lucide-react'
-import { getAgent, getSession, runInSession, getRun, resumeRun, pauseRun } from '../../api/client'
+import { getAgent, getSession, runInSession, getRun, resumeRun, pauseRun, expireRun } from '../../api/client'
+
+const formatCountdown = (seconds) => {
+  if (seconds <= 0) return '0s'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  if (h > 0) return `${h}h ${m}m ${s}s`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
 
 const pollRun = async (runId, signal, maxAttempts = 60, intervalMs = 1000) => {
   for (let i = 0; i < maxAttempts; i++) {
@@ -15,16 +25,37 @@ const pollRun = async (runId, signal, maxAttempts = 60, intervalMs = 1000) => {
   throw new Error('Run timed out')
 }
 
-const Message = ({ role, content, error, interrupted, paused, runId, onResume, interruptMetadata }) => {
+const Message = ({ role, content, error, interrupted, paused, runId, slaTimeoutAt, onResume, onExpire, interruptMetadata }) => {
   const isUser = role === 'user'
   const isConfidenceCheck = interruptMetadata?.interrupt_type === 'confidence_check'
   const [humanResponseInput, setHumanResponseInput] = useState('')
+  const [humanNotes, setHumanNotes] = useState('')
+  const [countdown, setCountdown] = useState(null)
+  const expiredRef = useRef(false)
+
+  // SLA countdown timer
+  useEffect(() => {
+    if (!interrupted || !slaTimeoutAt) return
+    const deadline = new Date(slaTimeoutAt).getTime()
+
+    const tick = () => {
+      const remaining = Math.max(0, Math.round((deadline - Date.now()) / 1000))
+      setCountdown(remaining)
+      if (remaining === 0 && !expiredRef.current) {
+        expiredRef.current = true
+        onExpire(runId, interruptMetadata)
+      }
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [interrupted, slaTimeoutAt, runId, interruptMetadata, onExpire])
 
   const handleResume = () => {
     if (isConfidenceCheck) {
       // If user typed an override, send it; otherwise approve the original LLM response
       const value = humanResponseInput.trim() || interruptMetadata.llm_response
-      onResume(runId, value)
+      onResume(runId, value, humanNotes.trim() || null)
     } else {
       onResume(runId)
     }
@@ -47,7 +78,30 @@ const Message = ({ role, content, error, interrupted, paused, runId, onResume, i
 
         {interrupted && isConfidenceCheck && interruptMetadata && (
           <div className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-            <div className="mb-2 font-mono" style={{ color: '#f59e0b' }}>
+            {interruptMetadata.reason && (
+              <div
+                className="mb-2 px-2 py-1.5 rounded"
+                style={{ background: '#f59e0b22', border: '1px solid #f59e0b44', color: '#f59e0b' }}
+              >
+                {interruptMetadata.reason}
+              </div>
+            )}
+            {countdown !== null && (
+              <div
+                className="mb-2 px-2 py-1 rounded flex items-center gap-1.5 font-mono"
+                style={{
+                  background: countdown <= 60 ? '#ef444422' : '#6366f122',
+                  border: `1px solid ${countdown <= 60 ? '#ef444444' : '#6366f144'}`,
+                  color: countdown <= 60 ? '#ef4444' : '#a5b4fc',
+                }}
+              >
+                <span>⏱</span>
+                {countdown > 0
+                  ? <>Review required within <strong>{formatCountdown(countdown)}</strong> — {interruptMetadata.timeout_action === 'auto_fail' ? 'run will fail' : 'will auto-approve'} if no action taken</>
+                  : 'SLA deadline reached — auto-resolving…'}
+              </div>
+            )}
+            <div className="mb-2 font-mono" style={{ color: 'var(--text-muted)' }}>
               Node: <strong>{interruptMetadata.node_name}</strong> &nbsp;|&nbsp;
               Confidence: <strong>{Math.round((interruptMetadata.confidence ?? 0) * 100)}%</strong> &lt; threshold{' '}
               <strong>{Math.round((interruptMetadata.threshold ?? 0) * 100)}%</strong>
@@ -70,6 +124,14 @@ const Message = ({ role, content, error, interrupted, paused, runId, onResume, i
               placeholder="Override response (leave empty to approve the LLM's response above)"
               className="w-full px-2 py-1.5 rounded text-xs font-mono outline-none resize-none mb-2"
               style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+            />
+            <textarea
+              value={humanNotes}
+              onChange={e => setHumanNotes(e.target.value)}
+              rows={2}
+              placeholder="Reviewer notes (optional — why did you approve or override?)"
+              className="w-full px-2 py-1.5 rounded text-xs outline-none resize-none mb-2"
+              style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text-muted)' }}
             />
           </div>
         )}
@@ -161,12 +223,56 @@ export const ChatPage = () => {
     }
   }, [currentRunId])
 
-  const handleResume = useCallback(async (runId, humanResponse = null) => {
+  const handleExpire = useCallback(async (runId, interruptMeta) => {
+    setTyping(true)
+    setMessages(prev => prev.filter(m => !(m.interrupted && m.runId === runId)))
+    try {
+      const result = await expireRun(runId)
+      if (result.status === 'failed') {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: result.error || 'SLA deadline reached — run automatically failed.',
+          error: true,
+        }])
+        setTyping(false)
+        setCurrentRunId(null)
+        return
+      }
+      // auto_approve: new run was created — poll it
+      setCurrentRunId(result.id)
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+      const completedRun = await pollRun(result.id, controller.signal)
+      if (completedRun?.status === 'success') {
+        const updatedSession = await getSession(agentId, versionId, sessionId)
+        const history = updatedSession.conversation_history || []
+        setMessages(history.map(msg => ({ role: msg.role, content: msg.content })))
+      } else {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: completedRun?.error || 'SLA auto-resolution completed.',
+          error: completedRun?.status === 'failed',
+        }])
+      }
+    } catch (e) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: e.message || 'SLA expiry failed.',
+        error: true,
+      }])
+    }
+    setTyping(false)
+    setCurrentRunId(null)
+  }, [agentId, versionId, sessionId])
+
+  const handleResume = useCallback(async (runId, humanResponse = null, humanNotes = null) => {
     setTyping(true)
     setMessages(prev => prev.filter(m => !(m.interrupted && m.runId === runId)))
 
     try {
-      const resumePayload = humanResponse ? { human_response: humanResponse } : {}
+      const resumePayload = {}
+      if (humanResponse) resumePayload.human_response = humanResponse
+      if (humanNotes) resumePayload.human_notes = humanNotes
       const newRun = await resumeRun(runId, resumePayload)
       setCurrentRunId(newRun.id)
 
@@ -186,11 +292,12 @@ export const ChatPage = () => {
         setMessages(prev => [...prev, {
           role: 'assistant',
           content: isConfidence
-            ? `Low confidence (${Math.round((meta.confidence ?? 0) * 100)}% < ${Math.round((meta.threshold ?? 0) * 100)}% threshold) — review the response below.`
+            ? (meta.reason || `Low confidence (${Math.round((meta.confidence ?? 0) * 100)}% < ${Math.round((meta.threshold ?? 0) * 100)}% threshold) — review the response below.`)
             : 'Run was interrupted again.',
           error: !isConfidence,
           interrupted: true,
           runId: completedRun.id,
+          slaTimeoutAt: completedRun.sla_timeout_at || null,
           interruptMetadata: meta || null,
         }])
       } else if (completedRun.status === 'failed') {
@@ -244,11 +351,12 @@ export const ChatPage = () => {
         setMessages(prev => [...prev, {
           role: 'assistant',
           content: isConfidence
-            ? `Low confidence (${Math.round((meta.confidence ?? 0) * 100)}% < ${Math.round((meta.threshold ?? 0) * 100)}% threshold) — review the response below.`
+            ? (meta.reason || `Low confidence (${Math.round((meta.confidence ?? 0) * 100)}% < ${Math.round((meta.threshold ?? 0) * 100)}% threshold) — review the response below.`)
             : 'Run was interrupted before completing.',
           error: !isConfidence,
           interrupted: true,
           runId: completedRun.id,
+          slaTimeoutAt: completedRun.sla_timeout_at || null,
           interruptMetadata: meta || null,
         }])
       } else if (completedRun.status === 'failed') {
@@ -334,7 +442,7 @@ export const ChatPage = () => {
             </div>
           )}
           {messages.map((msg, i) => (
-            <Message key={i} {...msg} onResume={handleResume} />
+            <Message key={i} {...msg} onResume={handleResume} onExpire={handleExpire} />
           ))}
           {typing && (
             <div className="flex items-center gap-3 mb-4">
