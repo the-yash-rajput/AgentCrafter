@@ -120,6 +120,9 @@ def _build_default_llm_config(subtype: NodeSubtype) -> JSONMapping:
         "temperature": 0.7,
         "max_tokens": 1000,
         "output_key": "llm_response",
+        "confidence_threshold_enabled": False,
+        "confidence_threshold": 0.7,
+        "confidence_key": "confidence",
     }
 
 

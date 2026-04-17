@@ -220,11 +220,13 @@ class GraphRuntimeRepository:
         snapshots: list[dict],
         *,
         conversation_turn: list[dict[str, str]] | None = None,
+        interrupt_metadata: dict | None = None,
     ) -> None:
         run.status = RunStatus.interrupted
         run.error = error
         run.conversation_turn = list(conversation_turn or [])
         run.state_snapshots = snapshots
+        run.interrupt_metadata = interrupt_metadata
         run.completed_at = datetime.utcnow()
         self.db.commit()
 

@@ -26,6 +26,7 @@ from services.runtime.nodes.types.llm.common import (
     resolve_llm_system_prompt,
     validate_llm_settings,
 )
+from services.runtime.nodes.types.llm.chat import _apply_confidence_check
 from type_defs import ExecutionContext, JSONMapping, NodeRunner, StatePayload
 
 
@@ -206,6 +207,8 @@ def _run_agent_llm_node(
             content = structured_response
         if settings.parse_json:
             content = parse_json_content(content)
+
+        content = _apply_confidence_check(content, config=config, node_name=node_name)
 
         agent_span_output = {
             "output_key": settings.output_key,

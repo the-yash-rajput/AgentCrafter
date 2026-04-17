@@ -51,14 +51,21 @@ class RunDetailView(APIView):
 
 
 class RunResumeView(APIView):
-    """POST /api/runs/{run_id}/resume — resume an interrupted run from its last checkpoint."""
+    """POST /api/runs/{run_id}/resume — resume an interrupted run from its last checkpoint.
+
+    For confidence-check HITL interruptions, the request body may include:
+      { "human_response": "..." }
+    If omitted, the original LLM response (stored in interrupt_metadata) is used.
+    """
 
     def post(self, request, run_id):
         from config.db import managed_db
         from services.run_service import RunService
 
+        human_response = (request.data or {}).get("human_response") or None
+
         with managed_db() as db:
-            new_run = RunService(db).resume_run(run_id)
+            new_run = RunService(db).resume_run(run_id, human_response=human_response)
 
         new_run_id = new_run.id
         agent_id = new_run.agent_id
@@ -67,6 +74,7 @@ class RunResumeView(APIView):
         checkpoint_thread_id = new_run.checkpoint_thread_id
         effective_input = new_run._runtime_effective_input
         resumed_from_run_id = new_run._runtime_resumed_from_run_id
+        resume_command = getattr(new_run, "_runtime_resume_command", None)
 
         def _execute():
             from config.db import managed_db as bg_managed_db
@@ -81,6 +89,7 @@ class RunResumeView(APIView):
                     conversation_history=[],
                     checkpoint_thread_id=checkpoint_thread_id,
                     resumed_from_run_id=resumed_from_run_id,
+                    resume_command=resume_command,
                 )
 
         threading.Thread(target=_execute, daemon=True).start()
