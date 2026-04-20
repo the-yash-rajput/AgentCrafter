@@ -1,0 +1,435 @@
+{
+  "schema_version": 1,
+  "agent": {
+    "name": "Missing Policy Copy Ticket Agent",
+    "description": "Handles Zendesk 'Missing Policy Copy' tickets: extracts identifier, checks MIS for policy availability, validates DP ownership, and either auto-resolves or escalates to Ops. Uses dummy API endpoints — replace with real MIS/ownership service URLs before going live. Requires AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_API_VERSION env vars."
+  },
+  "version": {
+    "version_number": 1,
+    "entry_node": "extract_identifier",
+    "exit_nodes": [
+      "respond_ask_identifier",
+      "respond_share_policy",
+      "escalate_ownership_mismatch",
+      "respond_wait",
+      "escalate_timeout"
+    ],
+    "state_schema": {
+      "ticket_id":             { "type": "string",  "default": "TKT-000" },
+      "ticket_content":        { "type": "string",  "default": "" },
+      "dp_id":                 { "type": "string",  "default": "" },
+      "identifier_extraction": { "type": "object",  "default": {} },
+      "mis_result":            { "type": "object",  "default": {} },
+      "ownership_result":      { "type": "object",  "default": {} },
+      "transaction_timing":    { "type": "object",  "default": {} },
+      "final_response_bundle": { "type": "object",  "default": {} }
+    }
+  },
+  "nodes": [
+    {
+      "name": "extract_identifier",
+      "type": "llm_call",
+      "subtype": "llm_agent",
+      "config": {
+        "node_type": "llm_call",
+        "llm_type": "llm_agent",
+        "provider": "azure_openai",
+        "model": "ai-agent-4o",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
+        "use_langfuse_prompt": false,
+        "langfuse_prompt_name": "",
+        "system_prompt": "You are an intelligent ticket parser for a motor insurance support system. Your task is to extract policy identifiers from support ticket content. Always return a JSON object with the exact schema provided.",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nTicket Content:\n{{ticket_content}}\n\nExtract any vehicle registration number (e.g. MH12AB1234) or transaction reference number from the ticket. Set has_identifier to true if at least one is found, false otherwise. If not found, return empty strings for the identifier fields.",
+        "temperature": 0.1,
+        "max_tokens": 300,
+        "output_key": "identifier_extraction",
+        "parse_json_response": false,
+        "structured_output_enabled": true,
+        "structured_output_schema": {
+          "title": "IdentifierExtraction",
+          "type": "object",
+          "properties": {
+            "has_identifier":    { "type": "boolean", "description": "True if a vehicle number or reference number was found" },
+            "vehicle_number":    { "type": "string",  "description": "Vehicle registration number if found, else empty string" },
+            "reference_number":  { "type": "string",  "description": "Transaction reference number if found, else empty string" }
+          },
+          "required": ["has_identifier", "vehicle_number", "reference_number"],
+          "additionalProperties": false
+        },
+        "confidence_threshold_enabled": false,
+        "confidence_threshold": 0.7,
+        "confidence_key": "confidence"
+      },
+      "position_x": 100,
+      "position_y": 300
+    },
+
+    {
+      "name": "respond_ask_identifier",
+      "type": "llm_call",
+      "subtype": "llm_agent",
+      "config": {
+        "node_type": "llm_call",
+        "llm_type": "llm_agent",
+        "provider": "azure_openai",
+        "model": "ai-agent-4o",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
+        "use_langfuse_prompt": false,
+        "langfuse_prompt_name": "",
+        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal system names, tools, or workflows. Keep the response short and friendly.",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nThe DP has raised a request for their policy copy but has not provided enough details to locate it. Write a short, friendly reply asking them to share either their vehicle registration number or their transaction reference number so we can retrieve the policy for them.",
+        "temperature": 0.4,
+        "max_tokens": 200,
+        "output_key": "final_response_bundle",
+        "parse_json_response": false,
+        "structured_output_enabled": true,
+        "structured_output_schema": {
+          "title": "ResponderOutput",
+          "type": "object",
+          "properties": {
+            "final_response": { "type": "string", "description": "The message to send back to the DP" },
+            "ticket_action":  { "type": "string", "enum": ["request_identifier"], "description": "Action taken on this ticket" }
+          },
+          "required": ["final_response", "ticket_action"],
+          "additionalProperties": false
+        },
+        "confidence_threshold_enabled": false,
+        "confidence_threshold": 0.7,
+        "confidence_key": "confidence"
+      },
+      "position_x": 400,
+      "position_y": 100
+    },
+
+    {
+      "name": "lookup_policy_mis",
+      "type": "communication",
+      "subtype": "api",
+      "config": {
+        "node_type": "communication",
+        "communication_type": "api",
+        "api": {
+          "url": "https://httpbin.org/post",
+          "method": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body_template": "{\"vehicle_number\": \"{{identifier_extraction.vehicle_number}}\", \"reference_number\": \"{{identifier_extraction.reference_number}}\", \"dp_id\": \"{{dp_id}}\"}",
+          "output_key": "mis_result"
+        },
+        "rabbitmq_message": {
+          "host": "localhost", "port": 5672, "exchange": "", "routing_key": "",
+          "queue": "", "payload_template": "{}", "output_key": "rabbitmq_result"
+        },
+        "kafka": {
+          "bootstrap_servers": "localhost:9092", "topic": "", "key_template": "",
+          "payload_template": "{}", "output_key": "kafka_result"
+        }
+      },
+      "position_x": 400,
+      "position_y": 300
+    },
+
+    {
+      "name": "validate_dp_ownership",
+      "type": "communication",
+      "subtype": "api",
+      "config": {
+        "node_type": "communication",
+        "communication_type": "api",
+        "api": {
+          "url": "https://httpbin.org/post",
+          "method": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body_template": "{\"dp_id\": \"{{dp_id}}\", \"policy_dp_id\": \"{{mis_result.dp_id}}\", \"policy_id\": \"{{mis_result.policy_id}}\"}",
+          "output_key": "ownership_result"
+        },
+        "rabbitmq_message": {
+          "host": "localhost", "port": 5672, "exchange": "", "routing_key": "",
+          "queue": "", "payload_template": "{}", "output_key": "rabbitmq_result"
+        },
+        "kafka": {
+          "bootstrap_servers": "localhost:9092", "topic": "", "key_template": "",
+          "payload_template": "{}", "output_key": "kafka_result"
+        }
+      },
+      "position_x": 700,
+      "position_y": 200
+    },
+
+    {
+      "name": "check_transaction_time",
+      "type": "communication",
+      "subtype": "api",
+      "config": {
+        "node_type": "communication",
+        "communication_type": "api",
+        "api": {
+          "url": "https://httpbin.org/post",
+          "method": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body_template": "{\"vehicle_number\": \"{{identifier_extraction.vehicle_number}}\", \"reference_number\": \"{{identifier_extraction.reference_number}}\"}",
+          "output_key": "transaction_timing"
+        },
+        "rabbitmq_message": {
+          "host": "localhost", "port": 5672, "exchange": "", "routing_key": "",
+          "queue": "", "payload_template": "{}", "output_key": "rabbitmq_result"
+        },
+        "kafka": {
+          "bootstrap_servers": "localhost:9092", "topic": "", "key_template": "",
+          "payload_template": "{}", "output_key": "kafka_result"
+        }
+      },
+      "position_x": 700,
+      "position_y": 450
+    },
+
+    {
+      "name": "respond_share_policy",
+      "type": "llm_call",
+      "subtype": "llm_agent",
+      "config": {
+        "node_type": "llm_call",
+        "llm_type": "llm_agent",
+        "provider": "azure_openai",
+        "model": "ai-agent-4o",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
+        "use_langfuse_prompt": false,
+        "langfuse_prompt_name": "",
+        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal system names, tools, or workflows. Keep the response short and friendly.",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nThe DP's policy copy has been located and ownership has been verified. Write a short, friendly message confirming that the policy copy has been shared with them and the request is resolved.",
+        "temperature": 0.4,
+        "max_tokens": 200,
+        "output_key": "final_response_bundle",
+        "parse_json_response": false,
+        "structured_output_enabled": true,
+        "structured_output_schema": {
+          "title": "ResponderOutput",
+          "type": "object",
+          "properties": {
+            "final_response": { "type": "string", "description": "The message to send back to the DP" },
+            "ticket_action":  { "type": "string", "enum": ["policy_shared"], "description": "Action taken on this ticket" }
+          },
+          "required": ["final_response", "ticket_action"],
+          "additionalProperties": false
+        },
+        "confidence_threshold_enabled": false,
+        "confidence_threshold": 0.7,
+        "confidence_key": "confidence"
+      },
+      "position_x": 1000,
+      "position_y": 100
+    },
+
+    {
+      "name": "escalate_ownership_mismatch",
+      "type": "llm_call",
+      "subtype": "llm_agent",
+      "config": {
+        "node_type": "llm_call",
+        "llm_type": "llm_agent",
+        "provider": "azure_openai",
+        "model": "ai-agent-4o",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
+        "use_langfuse_prompt": false,
+        "langfuse_prompt_name": "",
+        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal systems, Ops teams, or escalation workflows. Reassure the DP that the team is looking into their request.",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nThe policy copy request could not be auto-resolved because ownership details require manual verification. Write a short, professional message telling the DP that their request has been escalated and our team will get back to them shortly.",
+        "temperature": 0.4,
+        "max_tokens": 200,
+        "output_key": "final_response_bundle",
+        "parse_json_response": false,
+        "structured_output_enabled": true,
+        "structured_output_schema": {
+          "title": "ResponderOutput",
+          "type": "object",
+          "properties": {
+            "final_response": { "type": "string", "description": "The message to send back to the DP" },
+            "ticket_action":  { "type": "string", "enum": ["escalate_ownership"], "description": "Action taken on this ticket" }
+          },
+          "required": ["final_response", "ticket_action"],
+          "additionalProperties": false
+        },
+        "confidence_threshold_enabled": false,
+        "confidence_threshold": 0.7,
+        "confidence_key": "confidence"
+      },
+      "position_x": 1000,
+      "position_y": 300
+    },
+
+    {
+      "name": "respond_wait",
+      "type": "llm_call",
+      "subtype": "llm_agent",
+      "config": {
+        "node_type": "llm_call",
+        "llm_type": "llm_agent",
+        "provider": "azure_openai",
+        "model": "ai-agent-4o",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
+        "use_langfuse_prompt": false,
+        "langfuse_prompt_name": "",
+        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal system names, processing pipelines, or Ops workflows.",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nThe policy was transacted recently and the policy copy is still being generated (less than 3 hours since the transaction). Write a short, friendly message telling the DP that the policy document is being prepared and will be available within 3 hours of the transaction time. Ask them to check back shortly.",
+        "temperature": 0.4,
+        "max_tokens": 200,
+        "output_key": "final_response_bundle",
+        "parse_json_response": false,
+        "structured_output_enabled": true,
+        "structured_output_schema": {
+          "title": "ResponderOutput",
+          "type": "object",
+          "properties": {
+            "final_response": { "type": "string", "description": "The message to send back to the DP" },
+            "ticket_action":  { "type": "string", "enum": ["wait_for_generation"], "description": "Action taken on this ticket" }
+          },
+          "required": ["final_response", "ticket_action"],
+          "additionalProperties": false
+        },
+        "confidence_threshold_enabled": false,
+        "confidence_threshold": 0.7,
+        "confidence_key": "confidence"
+      },
+      "position_x": 1000,
+      "position_y": 450
+    },
+
+    {
+      "name": "escalate_timeout",
+      "type": "llm_call",
+      "subtype": "llm_agent",
+      "config": {
+        "node_type": "llm_call",
+        "llm_type": "llm_agent",
+        "provider": "azure_openai",
+        "model": "ai-agent-4o",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
+        "use_langfuse_prompt": false,
+        "langfuse_prompt_name": "",
+        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal systems, Ops teams, or escalation workflows. Be empathetic and reassure the DP that the matter will be resolved.",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nThe policy copy has not been generated even though more than 3 hours have passed since the transaction. This case is being escalated for manual resolution. Write a short, empathetic message telling the DP that their request is being prioritised and the team will resolve it as soon as possible.",
+        "temperature": 0.4,
+        "max_tokens": 200,
+        "output_key": "final_response_bundle",
+        "parse_json_response": false,
+        "structured_output_enabled": true,
+        "structured_output_schema": {
+          "title": "ResponderOutput",
+          "type": "object",
+          "properties": {
+            "final_response": { "type": "string", "description": "The message to send back to the DP" },
+            "ticket_action":  { "type": "string", "enum": ["escalate_timeout"], "description": "Action taken on this ticket" }
+          },
+          "required": ["final_response", "ticket_action"],
+          "additionalProperties": false
+        },
+        "confidence_threshold_enabled": false,
+        "confidence_threshold": 0.7,
+        "confidence_key": "confidence"
+      },
+      "position_x": 1000,
+      "position_y": 600
+    }
+  ],
+
+  "edges": [
+    {
+      "source_node_name": "extract_identifier",
+      "target_node_name": "lookup_policy_mis",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "python_expression",
+        "python_expression": {
+          "expression": "state.get('identifier_extraction', {}).get('has_identifier', False)"
+        }
+      },
+      "label": "has_identifier"
+    },
+    {
+      "source_node_name": "extract_identifier",
+      "target_node_name": "respond_ask_identifier",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "python_expression",
+        "python_expression": {
+          "expression": "state.get('identifier_extraction', {}).get('has_identifier', False)"
+        }
+      },
+      "label": "no_identifier"
+    },
+
+    {
+      "source_node_name": "lookup_policy_mis",
+      "target_node_name": "validate_dp_ownership",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "python_expression",
+        "python_expression": {
+          "expression": "state.get('mis_result', {}).get('policy_exists', False)"
+        }
+      },
+      "label": "policy_exists"
+    },
+    {
+      "source_node_name": "lookup_policy_mis",
+      "target_node_name": "check_transaction_time",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "python_expression",
+        "python_expression": {
+          "expression": "state.get('mis_result', {}).get('policy_exists', False)"
+        }
+      },
+      "label": "policy_missing"
+    },
+
+    {
+      "source_node_name": "validate_dp_ownership",
+      "target_node_name": "respond_share_policy",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "python_expression",
+        "python_expression": {
+          "expression": "state.get('ownership_result', {}).get('match', False)"
+        }
+      },
+      "label": "ownership_match"
+    },
+    {
+      "source_node_name": "validate_dp_ownership",
+      "target_node_name": "escalate_ownership_mismatch",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "python_expression",
+        "python_expression": {
+          "expression": "state.get('ownership_result', {}).get('match', False)"
+        }
+      },
+      "label": "ownership_mismatch"
+    },
+
+    {
+      "source_node_name": "check_transaction_time",
+      "target_node_name": "respond_wait",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "python_expression",
+        "python_expression": {
+          "expression": "state.get('transaction_timing', {}).get('hours_elapsed', 0) < 3"
+        }
+      },
+      "label": "within_3_hours"
+    },
+    {
+      "source_node_name": "check_transaction_time",
+      "target_node_name": "escalate_timeout",
+      "edge_type": "conditional",
+      "condition_config": {
+        "condition_type": "python_expression",
+        "python_expression": {
+          "expression": "state.get('transaction_timing', {}).get('hours_elapsed', 0) < 3"
+        }
+      },
+      "label": "past_3_hours"
+    }
+  ]
+}

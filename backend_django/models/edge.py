@@ -26,7 +26,7 @@ class Edge(Base):
     version_id = Column(BigInteger, ForeignKey("agent_versions.id", ondelete="CASCADE"), nullable=False, index=True)
     source_node_id = Column(BigInteger, nullable=False)
     target_node_id = Column(BigInteger, nullable=False)
-    edge_type = Column(SAEnum(EdgeType, name="edge_type"), default=EdgeType.direct, nullable=False)
+    edge_type = Column(SAEnum(EdgeType, name="edge_type", native_enum=False), default=EdgeType.direct, nullable=False)
     condition_config = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     label = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())

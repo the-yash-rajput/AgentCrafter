@@ -261,7 +261,7 @@ class NodeDefinitionResponseSerializer(_SAModelSerializer):
 
 # ── Export / Import serializers ───────────────────────────────────────────────
 
-class AgentExportPayloadSerializer(_SAModelSerializer):
+class AgentExportPayloadSerializer(serializers.Serializer):
     """Serializes the AgentExportPayload returned by AgentConfigSerializer."""
     schema_version = serializers.IntegerField()
     agent = serializers.DictField()
