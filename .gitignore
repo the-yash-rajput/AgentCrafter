@@ -24,3 +24,5 @@ dist/
 
 quotes_agent/
 drm-langchain-service/
+# Added by code-review-graph
+.code-review-graph/
