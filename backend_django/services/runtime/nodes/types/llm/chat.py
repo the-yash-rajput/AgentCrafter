@@ -27,6 +27,39 @@ from services.runtime.nodes.types.llm.common import (
 from type_defs import ExecutionContext, JSONMapping, NodeRunner, StatePayload
 
 
+def _apply_confidence_check(response, *, config: JSONMapping, node_name=None):
+    """If confidence threshold is enabled and the LLM response confidence is below
+    the threshold, call langgraph.types.interrupt() to pause the graph for human
+    review.  Returns the (possibly human-overridden) response on resume."""
+    if not config.get("confidence_threshold_enabled"):
+        return response
+
+    threshold = float(config.get("confidence_threshold") or 0.7)
+    confidence_key = str(config.get("confidence_key") or "confidence").strip()
+
+    confidence = None
+    if isinstance(response, dict):
+        raw = response.get(confidence_key)
+        if raw is not None:
+            try:
+                confidence = float(raw)
+            except (ValueError, TypeError):
+                pass
+
+    if confidence is None or confidence >= threshold:
+        return response
+
+    from langgraph.types import interrupt
+    human_value = interrupt({
+        "interrupt_type": "confidence_check",
+        "node_name": node_name,
+        "confidence": confidence,
+        "threshold": threshold,
+        "llm_response": response,
+    })
+    return human_value
+
+
 def build_chat_llm_node(
     config: JSONMapping,
     *,
@@ -34,6 +67,7 @@ def build_chat_llm_node(
     agent_name: Optional[str] = None,
     run_id: Optional[str] = None,
     node_name: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> NodeRunner:
     def llm_node(state: StatePayload) -> StatePayload:
         settings = resolve_llm_settings(config)
@@ -68,7 +102,7 @@ def build_chat_llm_node(
                     "llm_runtime": "chat_model",
                 },
             )
-            langfuse_session_id = str(state.get(SESSION_ID_KEY) or run_id or "").strip() or None
+            langfuse_session_id = str(state.get(SESSION_ID_KEY) or session_id or "").strip() or None
             shared_langfuse_handler = (execution_context or {}).get("langfuse_handler")
             shared_langfuse_metadata = dict((execution_context or {}).get("langfuse_metadata") or {})
             langfuse_handler = shared_langfuse_handler or langfuse_callback_handler()
@@ -184,6 +218,8 @@ def build_chat_llm_node(
 
             if settings.parse_json:
                 content = parse_json_content(content)
+
+            content = _apply_confidence_check(content, config=config, node_name=node_name)
 
             model_span_output = {
                 "output_key": settings.output_key,

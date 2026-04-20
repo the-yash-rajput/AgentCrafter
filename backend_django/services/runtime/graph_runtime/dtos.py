@@ -52,6 +52,7 @@ class LangGraphBuildRequest:
     execution_context: ExecutionContext = field(default_factory=dict)
     run_id: str | None = None
     checkpointer: Any | None = None  # PostgresSaver instance; None disables checkpointing
+    session_id: str | None = None
 
 
 @dataclass(slots=True)

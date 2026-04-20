@@ -49,7 +49,7 @@ export const runInSession = (agentId, versionId, sessionId, inputData) =>
 // Runs
 export const getRun = (runId) => api.get(`/runs/${runId}`).then(r => r.data)
 export const getRuns = (agentId) => api.get(`/agents/${agentId}/runs`).then(r => r.data)
-export const resumeRun = (runId) => api.post(`/runs/${runId}/resume`).then(r => r.data)
+export const resumeRun = (runId, data = {}) => api.post(`/runs/${runId}/resume`, data).then(r => r.data)
 export const pauseRun = (runId) => api.post(`/runs/${runId}/pause`).then(r => r.data)
 
 // Langfuse

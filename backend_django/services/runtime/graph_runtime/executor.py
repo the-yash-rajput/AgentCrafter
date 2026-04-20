@@ -14,6 +14,7 @@ class LangGraphExecutor:
         input_data: StatePayload,
         snapshots: list[dict],
         thread_id: str | None = None,
+        resume_command=None,
     ) -> GraphRunResult:
         current_state = dict(input_data or {})
 
@@ -22,7 +23,10 @@ class LangGraphExecutor:
         # current_state and loads the saved checkpoint for this thread_id.
         config = {"configurable": {"thread_id": thread_id}} if thread_id else {}
 
-        result = compiled_graph.graph.invoke(current_state, config)
+        # For HITL confidence-check resumes, invoke with Command(resume=...) so
+        # LangGraph reloads the checkpoint and returns the human value from interrupt().
+        invoke_input = resume_command if resume_command is not None else current_state
+        result = compiled_graph.graph.invoke(invoke_input, config)
         if isinstance(result, dict):
             current_state = result
         if "_error" in current_state:

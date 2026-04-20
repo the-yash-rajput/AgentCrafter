@@ -15,8 +15,21 @@ const pollRun = async (runId, signal, maxAttempts = 60, intervalMs = 1000) => {
   throw new Error('Run timed out')
 }
 
-const Message = ({ role, content, error, interrupted, paused, runId, onResume }) => {
+const Message = ({ role, content, error, interrupted, paused, runId, onResume, interruptMetadata }) => {
   const isUser = role === 'user'
+  const isConfidenceCheck = interruptMetadata?.interrupt_type === 'confidence_check'
+  const [humanResponseInput, setHumanResponseInput] = useState('')
+
+  const handleResume = () => {
+    if (isConfidenceCheck) {
+      // If user typed an override, send it; otherwise approve the original LLM response
+      const value = humanResponseInput.trim() || interruptMetadata.llm_response
+      onResume(runId, value)
+    } else {
+      onResume(runId)
+    }
+  }
+
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
       <div
@@ -31,13 +44,43 @@ const Message = ({ role, content, error, interrupted, paused, runId, onResume })
         }}
       >
         {content}
+
+        {interrupted && isConfidenceCheck && interruptMetadata && (
+          <div className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+            <div className="mb-2 font-mono" style={{ color: '#f59e0b' }}>
+              Node: <strong>{interruptMetadata.node_name}</strong> &nbsp;|&nbsp;
+              Confidence: <strong>{Math.round((interruptMetadata.confidence ?? 0) * 100)}%</strong> &lt; threshold{' '}
+              <strong>{Math.round((interruptMetadata.threshold ?? 0) * 100)}%</strong>
+            </div>
+            <div className="mb-2">
+              <span style={{ color: 'var(--text-muted)' }}>LLM response:</span>
+              <pre
+                className="mt-1 p-2 rounded text-xs overflow-auto"
+                style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)', maxHeight: '120px' }}
+              >
+                {typeof interruptMetadata.llm_response === 'object'
+                  ? JSON.stringify(interruptMetadata.llm_response, null, 2)
+                  : String(interruptMetadata.llm_response ?? '')}
+              </pre>
+            </div>
+            <textarea
+              value={humanResponseInput}
+              onChange={e => setHumanResponseInput(e.target.value)}
+              rows={3}
+              placeholder="Override response (leave empty to approve the LLM's response above)"
+              className="w-full px-2 py-1.5 rounded text-xs font-mono outline-none resize-none mb-2"
+              style={{ background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' }}
+            />
+          </div>
+        )}
+
         {interrupted && onResume && (
           <button
-            onClick={() => onResume(runId)}
+            onClick={handleResume}
             className="mt-2 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-80"
             style={{ background: '#6366f1', color: '#fff' }}
           >
-            ↺ Resume
+            ↺ {isConfidenceCheck ? (humanResponseInput.trim() ? 'Resume with Override' : 'Approve & Resume') : 'Resume'}
           </button>
         )}
       </div>
@@ -118,12 +161,13 @@ export const ChatPage = () => {
     }
   }, [currentRunId])
 
-  const handleResume = useCallback(async (runId) => {
+  const handleResume = useCallback(async (runId, humanResponse = null) => {
     setTyping(true)
     setMessages(prev => prev.filter(m => !(m.interrupted && m.runId === runId)))
 
     try {
-      const newRun = await resumeRun(runId)
+      const resumePayload = humanResponse ? { human_response: humanResponse } : {}
+      const newRun = await resumeRun(runId, resumePayload)
       setCurrentRunId(newRun.id)
 
       const controller = new AbortController()
@@ -137,12 +181,17 @@ export const ChatPage = () => {
           paused: true,
         }])
       } else if (completedRun.status === 'interrupted') {
+        const meta = completedRun.interrupt_metadata
+        const isConfidence = meta?.interrupt_type === 'confidence_check'
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: 'Run was interrupted again.',
-          error: true,
+          content: isConfidence
+            ? `Low confidence (${Math.round((meta.confidence ?? 0) * 100)}% < ${Math.round((meta.threshold ?? 0) * 100)}% threshold) — review the response below.`
+            : 'Run was interrupted again.',
+          error: !isConfidence,
           interrupted: true,
           runId: completedRun.id,
+          interruptMetadata: meta || null,
         }])
       } else if (completedRun.status === 'failed') {
         setMessages(prev => [...prev, {
@@ -190,12 +239,17 @@ export const ChatPage = () => {
           paused: true,
         }])
       } else if (completedRun.status === 'interrupted') {
+        const meta = completedRun.interrupt_metadata
+        const isConfidence = meta?.interrupt_type === 'confidence_check'
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: 'Run was interrupted before completing.',
-          error: true,
+          content: isConfidence
+            ? `Low confidence (${Math.round((meta.confidence ?? 0) * 100)}% < ${Math.round((meta.threshold ?? 0) * 100)}% threshold) — review the response below.`
+            : 'Run was interrupted before completing.',
+          error: !isConfidence,
           interrupted: true,
           runId: completedRun.id,
+          interruptMetadata: meta || null,
         }])
       } else if (completedRun.status === 'failed') {
         setMessages(prev => [...prev, {

@@ -73,6 +73,7 @@ class RunService:
         conversation_history: list,
         checkpoint_thread_id: uuid.UUID,
         resumed_from_run_id: int | None = None,
+        resume_command=None,
     ) -> None:
         """Execute a previously created run in the background.
 
@@ -99,6 +100,7 @@ class RunService:
                 checkpoint_thread_id=checkpoint_thread_id,
                 resumed_from_run_id=resumed_from_run_id,
                 existing_run=run,
+                resume_command=resume_command,
             )
         except Exception:
             # compile_and_run already marked run as failed/interrupted
@@ -110,12 +112,15 @@ class RunService:
         if run and run.conversation_turn and run.status == RunStatus.success:
             SessionService(self.db).append_conversation_turn(session_id, run.conversation_turn)
 
-    def resume_run(self, run_id: int) -> Run:
+    def resume_run(self, run_id: int, human_response=None) -> Run:
         """Resume an interrupted run from its last LangGraph checkpoint.
 
         Creates a new Run record that shares the same checkpoint_thread_id so
         LangGraph automatically resumes from the last saved checkpoint state.
         Returns the new run immediately; execution happens in a background thread.
+
+        For confidence-check HITL interruptions, human_response is the approved or
+        overridden value to pass back to the interrupted node via Command(resume=...).
         """
         repo = GraphRuntimeRepository(self.db)
         interrupted_run = repo.get_run_for_resume(run_id)
@@ -135,6 +140,16 @@ class RunService:
         new_run._runtime_conversation_history = []
         new_run._runtime_resumed_from_run_id = run_id
         new_run._runtime_interrupted_session_id = interrupted_run.session_id
+
+        # For confidence-check HITL: build a Command(resume=...) so the executor
+        # passes it to graph.invoke() instead of the initial state dict.
+        interrupt_meta = dict(interrupted_run.interrupt_metadata or {})
+        if interrupt_meta.get("interrupt_type") == "confidence_check":
+            from langgraph.types import Command
+            new_run._runtime_resume_command = Command(resume=human_response)
+        else:
+            new_run._runtime_resume_command = None
+
         return new_run
 
     def pause_run(self, run_id: int) -> Run:

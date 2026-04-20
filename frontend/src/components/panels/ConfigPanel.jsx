@@ -396,6 +396,43 @@ const LLMNodeConfig = ({ config, onChange }) => {
         </label>
       </Section>
 
+      <Section title="Confidence Check">
+        <label className="flex items-center gap-2 text-sm cursor-pointer mb-3">
+          <input
+            type="checkbox"
+            checked={cfg.confidence_threshold_enabled || false}
+            onChange={e => set('confidence_threshold_enabled', e.target.checked)}
+            className="accent-indigo-500"
+          />
+          <span style={{ color: 'var(--text-dim)' }}>Enable confidence-based human review</span>
+        </label>
+        {cfg.confidence_threshold_enabled && (
+          <>
+            <Slider
+              label="Confidence Threshold"
+              value={cfg.confidence_threshold ?? 0.7}
+              onChange={v => set('confidence_threshold', v)}
+              min={0}
+              max={1}
+              step={0.05}
+            />
+            <Field label="Confidence Key">
+              <Input
+                value={cfg.confidence_key || 'confidence'}
+                onChange={v => set('confidence_key', v)}
+                placeholder="confidence"
+              />
+            </Field>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              Requires <span style={{ color: 'var(--text-dim)' }}>Parse JSON Response</span> to be enabled.
+              The LLM output must include a numeric{' '}
+              <code className="text-indigo-400">{cfg.confidence_key || 'confidence'}</code> field (0.0 – 1.0).
+              When the value falls below the threshold the run pauses for human review.
+            </p>
+          </>
+        )}
+      </Section>
+
       {llmType === 'llm_agent' && (
         <Section title="Structured Output">
           <label className="flex items-center gap-2 text-sm cursor-pointer mb-3">

@@ -44,6 +44,7 @@ class GraphRunner:
         checkpoint_thread_id: Optional[uuid.UUID] = None,
         resumed_from_run_id: Optional[int] = None,
         existing_run=None,
+        resume_command=None,
     ) -> dict:
         base_execution_context = dict(execution_context or {})
         resolved_conversation_history = normalize_conversation_history(
@@ -106,6 +107,7 @@ class GraphRunner:
         request.execution_context["langfuse_metadata"] = dict(trace_session.metadata or {})
         exit_nodes = set(get_agent_exit_nodes(graph_data.agent))
 
+        session_id_str = str(run.session_id) if run.session_id else None
         checkpointer = get_checkpointer()
         try:
             compiled_graph = self.builder.compile(
@@ -115,6 +117,7 @@ class GraphRunner:
                     execution_context=request.execution_context,
                     run_id=str(run.id),
                     checkpointer=checkpointer,
+                    session_id=session_id_str,
                 )
             )
             result = self.executor.execute(
@@ -123,6 +126,7 @@ class GraphRunner:
                 input_data=current_state,
                 snapshots=snapshots,
                 thread_id=str(checkpoint_thread_id),
+                resume_command=resume_command,
             )
             current_state = result.output
             persisted_output = strip_session_fields(
@@ -168,6 +172,27 @@ class GraphRunner:
                 agent_output=persisted_output,
                 error=error_str,
             )
+
+            # Confidence-check HITL: LangGraph interrupt() was called inside a node.
+            # Store the interrupt payload so the frontend can show context to the human.
+            try:
+                from langgraph.errors import GraphInterrupt
+                is_graph_interrupt = isinstance(e, GraphInterrupt)
+            except ImportError:
+                is_graph_interrupt = False
+
+            if is_graph_interrupt:
+                interrupt_payload = None
+                if getattr(e, "interrupts", None):
+                    interrupt_payload = e.interrupts[0].value
+                self.repository.mark_run_interrupted(
+                    run, error_str, snapshots,
+                    conversation_turn=conversation_turn,
+                    interrupt_metadata=interrupt_payload,
+                )
+                self.trace_service.mark_failure(trace_session, current_state, error_str)
+                return {"status": "interrupted", "output": persisted_output}
+
             # Logical node failure: node set _error in state → mark as failed (not resumable).
             # Any other exception (crash, timeout, SIGKILL) → mark as interrupted (resumable).
             is_logical_failure = bool(current_state.get("_error"))
@@ -198,7 +223,7 @@ class GraphRunner:
         return report.to_dict()
 
     @staticmethod
-    def _build_request(*, graph_data, snapshots, execution_context, run_id, checkpointer=None):
+    def _build_request(*, graph_data, snapshots, execution_context, run_id, checkpointer=None, session_id=None):
         from services.runtime.graph_runtime.dtos import LangGraphBuildRequest
 
         return LangGraphBuildRequest(
@@ -207,6 +232,7 @@ class GraphRunner:
             execution_context=execution_context,
             run_id=run_id,
             checkpointer=checkpointer,
+            session_id=session_id,
         )
 
     @staticmethod

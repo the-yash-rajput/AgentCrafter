@@ -16,6 +16,7 @@ def build_llm_node(
     agent_name: Optional[str] = None,
     run_id: Optional[str] = None,
     node_name: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> NodeRunner:
     resolved_subtype = getattr(subtype, "value", subtype)
     legacy_runtime = str(config.get("llm_runtime") or "").strip().lower()
@@ -28,6 +29,7 @@ def build_llm_node(
             agent_name=agent_name,
             run_id=run_id,
             node_name=node_name,
+            session_id=session_id,
         )
 
     if str(resolved_subtype) == "chat":
@@ -39,6 +41,7 @@ def build_llm_node(
             agent_name=agent_name,
             run_id=run_id,
             node_name=node_name,
+            session_id=session_id,
         )
 
     raise ValueError(f"Unsupported llm node subtype '{subtype}'")

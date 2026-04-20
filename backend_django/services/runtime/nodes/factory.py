@@ -20,6 +20,7 @@ class NodeRunnerFactory:
         agent_name: Optional[str] = None,
         run_id: Optional[str] = None,
         node_name: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> NodeRunner:
         resolved_type, resolved_subtype, resolved_config = resolve_node_definition(
             node_type,
@@ -48,6 +49,7 @@ class NodeRunnerFactory:
                 agent_name=agent_name,
                 run_id=run_id,
                 node_name=node_name,
+                session_id=session_id,
             )
 
         if resolved_type == NodeType.communication:
