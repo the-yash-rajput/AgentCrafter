@@ -238,14 +238,21 @@ def end_current_runtime_span(
     scope: Any = None,
     output_payload: Any = None,
 ):
-    end_runtime_span(span, output_payload=output_payload)
-    if scope is None:
-        return
-
-    try:
-        scope.__exit__(None, None, None)
-    except Exception:
-        pass
+    if scope is not None:
+        # start_as_current_observation path — set output via update() before
+        # the scope exit finalises the observation, because span.end() is a
+        # no-op on these observation objects in Langfuse SDK 4.x.
+        try:
+            if span is not None and hasattr(span, "update"):
+                span.update(output=_to_serializable(output_payload))
+        except Exception:
+            pass
+        try:
+            scope.__exit__(None, None, None)
+        except Exception:
+            pass
+    else:
+        end_runtime_span(span, output_payload=output_payload)
 
 
 def flush_langfuse():

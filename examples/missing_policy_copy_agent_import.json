@@ -16,13 +16,13 @@
     ],
     "state_schema": {
       "ticket_id":             { "type": "string",  "default": "TKT-000" },
-      "ticket_content":        { "type": "string",  "default": "" },
+      "message":               { "type": "string",  "default": "" },
       "dp_id":                 { "type": "string",  "default": "" },
       "identifier_extraction": { "type": "object",  "default": {} },
       "mis_result":            { "type": "object",  "default": {} },
       "ownership_result":      { "type": "object",  "default": {} },
       "transaction_timing":    { "type": "object",  "default": {} },
-      "final_response_bundle": { "type": "object",  "default": {} }
+      "response":              { "type": "string",  "default": "" }
     }
   },
   "nodes": [
@@ -39,7 +39,7 @@
         "use_langfuse_prompt": false,
         "langfuse_prompt_name": "",
         "system_prompt": "You are an intelligent ticket parser for a motor insurance support system. Your task is to extract policy identifiers from support ticket content. Always return a JSON object with the exact schema provided.",
-        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nTicket Content:\n{{ticket_content}}\n\nExtract any vehicle registration number (e.g. MH12AB1234) or transaction reference number from the ticket. Set has_identifier to true if at least one is found, false otherwise. If not found, return empty strings for the identifier fields.",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nMessage from DP:\n{{message}}\n\nExtract any vehicle registration number (e.g. MH12AB1234) or transaction reference number from the message. Set has_identifier to true if at least one is found, false otherwise. If not found, return empty strings for the identifier fields.",
         "temperature": 0.1,
         "max_tokens": 300,
         "output_key": "identifier_extraction",
@@ -77,22 +77,12 @@
         "use_langfuse_prompt": false,
         "langfuse_prompt_name": "",
         "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal system names, tools, or workflows. Keep the response short and friendly.",
-        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nThe DP has raised a request for their policy copy but has not provided enough details to locate it. Write a short, friendly reply asking them to share either their vehicle registration number or their transaction reference number so we can retrieve the policy for them.",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe DP has not provided a vehicle registration number or transaction reference number. Write a short, friendly reply asking them to share one so we can retrieve the policy for them.",
         "temperature": 0.4,
         "max_tokens": 200,
-        "output_key": "final_response_bundle",
+        "output_key": "response",
         "parse_json_response": false,
-        "structured_output_enabled": true,
-        "structured_output_schema": {
-          "title": "ResponderOutput",
-          "type": "object",
-          "properties": {
-            "final_response": { "type": "string", "description": "The message to send back to the DP" },
-            "ticket_action":  { "type": "string", "enum": ["request_identifier"], "description": "Action taken on this ticket" }
-          },
-          "required": ["final_response", "ticket_action"],
-          "additionalProperties": false
-        },
+        "structured_output_enabled": false,
         "confidence_threshold_enabled": false,
         "confidence_threshold": 0.7,
         "confidence_key": "confidence"
@@ -195,22 +185,12 @@
         "use_langfuse_prompt": false,
         "langfuse_prompt_name": "",
         "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal system names, tools, or workflows. Keep the response short and friendly.",
-        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nThe DP's policy copy has been located and ownership has been verified. Write a short, friendly message confirming that the policy copy has been shared with them and the request is resolved.",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe policy copy has been located and ownership verified. Write a short, friendly message confirming the policy copy has been shared with the DP and the request is resolved.",
         "temperature": 0.4,
         "max_tokens": 200,
-        "output_key": "final_response_bundle",
+        "output_key": "response",
         "parse_json_response": false,
-        "structured_output_enabled": true,
-        "structured_output_schema": {
-          "title": "ResponderOutput",
-          "type": "object",
-          "properties": {
-            "final_response": { "type": "string", "description": "The message to send back to the DP" },
-            "ticket_action":  { "type": "string", "enum": ["policy_shared"], "description": "Action taken on this ticket" }
-          },
-          "required": ["final_response", "ticket_action"],
-          "additionalProperties": false
-        },
+        "structured_output_enabled": false,
         "confidence_threshold_enabled": false,
         "confidence_threshold": 0.7,
         "confidence_key": "confidence"
@@ -232,22 +212,12 @@
         "use_langfuse_prompt": false,
         "langfuse_prompt_name": "",
         "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal systems, Ops teams, or escalation workflows. Reassure the DP that the team is looking into their request.",
-        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nThe policy copy request could not be auto-resolved because ownership details require manual verification. Write a short, professional message telling the DP that their request has been escalated and our team will get back to them shortly.",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe ownership details need manual verification. Write a short, professional message telling the DP their request has been escalated and the team will get back to them shortly.",
         "temperature": 0.4,
         "max_tokens": 200,
-        "output_key": "final_response_bundle",
+        "output_key": "response",
         "parse_json_response": false,
-        "structured_output_enabled": true,
-        "structured_output_schema": {
-          "title": "ResponderOutput",
-          "type": "object",
-          "properties": {
-            "final_response": { "type": "string", "description": "The message to send back to the DP" },
-            "ticket_action":  { "type": "string", "enum": ["escalate_ownership"], "description": "Action taken on this ticket" }
-          },
-          "required": ["final_response", "ticket_action"],
-          "additionalProperties": false
-        },
+        "structured_output_enabled": false,
         "confidence_threshold_enabled": false,
         "confidence_threshold": 0.7,
         "confidence_key": "confidence"
@@ -269,22 +239,12 @@
         "use_langfuse_prompt": false,
         "langfuse_prompt_name": "",
         "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal system names, processing pipelines, or Ops workflows.",
-        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nThe policy was transacted recently and the policy copy is still being generated (less than 3 hours since the transaction). Write a short, friendly message telling the DP that the policy document is being prepared and will be available within 3 hours of the transaction time. Ask them to check back shortly.",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe policy was transacted recently (less than 3 hours ago) and the copy is still being generated. Write a short, friendly message telling the DP the document will be available within 3 hours of the transaction time and to check back shortly.",
         "temperature": 0.4,
         "max_tokens": 200,
-        "output_key": "final_response_bundle",
+        "output_key": "response",
         "parse_json_response": false,
-        "structured_output_enabled": true,
-        "structured_output_schema": {
-          "title": "ResponderOutput",
-          "type": "object",
-          "properties": {
-            "final_response": { "type": "string", "description": "The message to send back to the DP" },
-            "ticket_action":  { "type": "string", "enum": ["wait_for_generation"], "description": "Action taken on this ticket" }
-          },
-          "required": ["final_response", "ticket_action"],
-          "additionalProperties": false
-        },
+        "structured_output_enabled": false,
         "confidence_threshold_enabled": false,
         "confidence_threshold": 0.7,
         "confidence_key": "confidence"
@@ -306,22 +266,12 @@
         "use_langfuse_prompt": false,
         "langfuse_prompt_name": "",
         "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal systems, Ops teams, or escalation workflows. Be empathetic and reassure the DP that the matter will be resolved.",
-        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nThe policy copy has not been generated even though more than 3 hours have passed since the transaction. This case is being escalated for manual resolution. Write a short, empathetic message telling the DP that their request is being prioritised and the team will resolve it as soon as possible.",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe policy copy has not been generated even though more than 3 hours have passed since the transaction. Write a short, empathetic message telling the DP that their request is being prioritised and the team will resolve it as soon as possible.",
         "temperature": 0.4,
         "max_tokens": 200,
-        "output_key": "final_response_bundle",
+        "output_key": "response",
         "parse_json_response": false,
-        "structured_output_enabled": true,
-        "structured_output_schema": {
-          "title": "ResponderOutput",
-          "type": "object",
-          "properties": {
-            "final_response": { "type": "string", "description": "The message to send back to the DP" },
-            "ticket_action":  { "type": "string", "enum": ["escalate_timeout"], "description": "Action taken on this ticket" }
-          },
-          "required": ["final_response", "ticket_action"],
-          "additionalProperties": false
-        },
+        "structured_output_enabled": false,
         "confidence_threshold_enabled": false,
         "confidence_threshold": 0.7,
         "confidence_key": "confidence"

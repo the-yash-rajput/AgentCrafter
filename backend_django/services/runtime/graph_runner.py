@@ -246,7 +246,7 @@ class GraphRunner:
             for snapshot in reversed(snapshots):
                 if snapshot.get("node_name") not in exit_nodes:
                     continue
-                node_output = snapshot.get("node_output")
+                node_output = snapshot.get("state_after") or snapshot.get("node_output")
                 if isinstance(node_output, dict):
                     return node_output
                 break

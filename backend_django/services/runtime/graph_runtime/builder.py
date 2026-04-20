@@ -158,8 +158,8 @@ class LangGraphBuilder:
             try:
                 if node.type != NodeType.llm_call:
                     tool_span, tool_scope = start_current_runtime_span(
-                        name="tools",
-                        input_payload={"node_name": node.name},
+                        name=node.name,
+                        input_payload={"node_name": node.name, "input": before},
                         metadata={
                             "node_type": node.type.value,
                             "node_subtype": node.subtype.value,
@@ -194,9 +194,11 @@ class LangGraphBuilder:
                 if "_error" in result and result["_error"]:
                     raise RuntimeError(result["_error"])
 
+                state_diff = {k: v for k, v in result.items() if before.get(k) != v}
                 tool_span_output = {
                     "node_name": node.name,
                     "status": "success",
+                    "output": state_diff,
                 }
                 return result
             except Exception as exc:
