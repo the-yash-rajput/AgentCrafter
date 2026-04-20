@@ -6,7 +6,7 @@ from typing import Dict
 
 from langgraph.graph import END, StateGraph
 
-from models import Edge, EdgeType, Node, NodeType
+from models import Edge, EdgeType, Node
 from services.agent_exit_nodes import get_agent_exit_nodes
 from services.runtime.edge_router import build_condition_router
 from services.runtime.graph_runtime.dtos import CompiledGraphArtifact, LangGraphBuildRequest
@@ -156,15 +156,16 @@ class LangGraphBuilder:
             tool_scope = None
             tool_span_output: dict | None = None
             try:
-                if node.type != NodeType.llm_call:
-                    tool_span, tool_scope = start_current_runtime_span(
-                        name=node.name,
-                        input_payload={"node_name": node.name, "input": before},
-                        metadata={
-                            "node_type": node.type.value,
-                            "node_subtype": node.subtype.value,
-                        },
-                    )
+                tool_span, tool_scope = start_current_runtime_span(
+                    name=node.name,
+                    input_payload={"node_name": node.name, "state_before": before},
+                    metadata={
+                        "node_id": str(node.id),
+                        "node_type": node.type.value,
+                        "node_subtype": node.subtype.value,
+                        "graph_step": "node_execution",
+                    },
+                )
 
                 result = fn(state)
 
@@ -198,7 +199,9 @@ class LangGraphBuilder:
                 tool_span_output = {
                     "node_name": node.name,
                     "status": "success",
-                    "output": state_diff,
+                    "state_diff": state_diff,
+                    "state_after": after,
+                    "snapshot_persisted": persist_snapshot is not None,
                 }
                 return result
             except Exception as exc:

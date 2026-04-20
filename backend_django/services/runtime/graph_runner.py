@@ -18,6 +18,7 @@ from services.runtime.graph_runtime.executor import LangGraphExecutor
 from services.runtime.graph_runtime.fetcher import GraphRuntimeRepository
 from services.runtime.graph_runtime.tracing import LangGraphTraceService
 from services.runtime.graph_runtime.validator import GraphValidator
+from services.runtime.langfuse_tracing import end_current_runtime_span, start_current_runtime_span
 from type_defs import ExecutionContext, StatePayload
 
 
@@ -105,29 +106,98 @@ class GraphRunner:
         )
         request.execution_context["langfuse_handler"] = trace_session.callback_handler
         request.execution_context["langfuse_metadata"] = dict(trace_session.metadata or {})
+        request.execution_context["langfuse_trace_context"] = dict(trace_session.trace_context or {})
         exit_nodes = set(get_agent_exit_nodes(graph_data.agent))
 
         session_id_str = str(run.session_id) if run.session_id else None
         checkpointer = get_checkpointer()
         try:
-            compiled_graph = self.builder.compile(
-                request=self._build_request(
-                    graph_data=graph_data,
-                    snapshots=snapshots,
-                    execution_context=request.execution_context,
-                    run_id=str(run.id),
-                    checkpointer=checkpointer,
-                    session_id=session_id_str,
+            compile_span = None
+            compile_scope = None
+            compile_span_output: dict | None = None
+            try:
+                compile_span, compile_scope = start_current_runtime_span(
+                    name="graph.compile",
+                    input_payload={
+                        "agent_id": request.agent_id,
+                        "node_count": len(graph_data.nodes),
+                        "edge_count": len(graph_data.edges),
+                    },
+                    metadata={
+                        "run_id": str(run.id),
+                        "agent_name": graph_data.agent.name,
+                    },
                 )
-            )
-            result = self.executor.execute(
-                compiled_graph,
-                run_id=run.id,
-                input_data=current_state,
-                snapshots=snapshots,
-                thread_id=str(checkpoint_thread_id),
-                resume_command=resume_command,
-            )
+                compiled_graph = self.builder.compile(
+                    request=self._build_request(
+                        graph_data=graph_data,
+                        snapshots=snapshots,
+                        execution_context=request.execution_context,
+                        run_id=str(run.id),
+                        checkpointer=checkpointer,
+                        session_id=session_id_str,
+                    )
+                )
+                compile_span_output = {
+                    "status": "success",
+                    "executable_node_count": len(compiled_graph.executable_node_names),
+                }
+            except Exception as exc:
+                compile_span_output = {
+                    "status": "error",
+                    "error": str(exc),
+                }
+                raise
+            finally:
+                end_current_runtime_span(
+                    compile_span,
+                    compile_scope,
+                    output_payload=compile_span_output,
+                )
+
+            execute_span = None
+            execute_scope = None
+            execute_span_output: dict | None = None
+            try:
+                execute_span, execute_scope = start_current_runtime_span(
+                    name="graph.execute",
+                    input_payload={
+                        "thread_id": str(checkpoint_thread_id),
+                        "resume_requested": resume_command is not None,
+                        "input_state": current_state,
+                    },
+                    metadata={
+                        "run_id": str(run.id),
+                        "agent_name": graph_data.agent.name,
+                    },
+                )
+                result = self.executor.execute(
+                    compiled_graph,
+                    run_id=run.id,
+                    input_data=current_state,
+                    snapshots=snapshots,
+                    thread_id=str(checkpoint_thread_id),
+                    resume_command=resume_command,
+                )
+                execute_span_output = {
+                    "status": "success",
+                    "snapshot_count": len(snapshots),
+                    "output_state": result.output,
+                }
+            except Exception as exc:
+                execute_span_output = {
+                    "status": "error",
+                    "error": str(exc),
+                    "snapshot_count": len(snapshots),
+                }
+                raise
+            finally:
+                end_current_runtime_span(
+                    execute_span,
+                    execute_scope,
+                    output_payload=execute_span_output,
+                )
+
             current_state = result.output
             persisted_output = strip_session_fields(
                 self._resolve_final_output(

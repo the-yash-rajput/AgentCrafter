@@ -4,7 +4,6 @@ from typing import Any, Optional
 
 from base.handlers.langfuse_handler import (
     get_langfuse_metadata,
-    langfuse_callback_handler,
 )
 from services.session_history import SESSION_ID_KEY
 from services.runtime.json_utils import JSON_RESPONSE_INSTRUCTION, parse_json_content
@@ -20,6 +19,7 @@ from services.runtime.nodes.types.llm.common import (
     build_trace_output_messages as _build_trace_output_messages,
     extract_langchain_content as _extract_langchain_content,
     render_template as _render_template,
+    resolve_langfuse_handler as _resolve_langfuse_handler,
     resolve_llm_settings,
     resolve_llm_system_prompt as _resolve_llm_system_prompt,
     validate_llm_settings,
@@ -103,9 +103,8 @@ def build_chat_llm_node(
                 },
             )
             langfuse_session_id = str(state.get(SESSION_ID_KEY) or session_id or "").strip() or None
-            shared_langfuse_handler = (execution_context or {}).get("langfuse_handler")
             shared_langfuse_metadata = dict((execution_context or {}).get("langfuse_metadata") or {})
-            langfuse_handler = shared_langfuse_handler or langfuse_callback_handler()
+            langfuse_handler = _resolve_langfuse_handler(execution_context)
             langfuse_metadata = {
                 **shared_langfuse_metadata,
                 **get_langfuse_metadata(
@@ -222,13 +221,23 @@ def build_chat_llm_node(
             content = _apply_confidence_check(content, config=config, node_name=node_name)
 
             model_span_output = {
+                "node_name": node_name,
+                "provider": settings.provider,
+                "model": (
+                    settings.azure_deployment
+                    if settings.provider in ("azure_openai", "azure", "openai")
+                    else settings.model_name
+                ),
                 "output_key": settings.output_key,
                 "status": "success",
+                "output": content,
             }
             return {**state, settings.output_key: content}
 
         except Exception as exc:
             model_span_output = {
+                "node_name": node_name,
+                "provider": settings.provider,
                 "output_key": settings.output_key,
                 "status": "error",
                 "error": str(exc),

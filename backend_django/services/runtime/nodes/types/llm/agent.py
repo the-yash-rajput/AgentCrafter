@@ -7,7 +7,6 @@ from typing import Any, Optional
 
 from base.handlers.langfuse_handler import (
     get_langfuse_metadata,
-    langfuse_callback_handler,
 )
 from services.session_history import SESSION_ID_KEY
 from services.runtime.json_utils import JSON_RESPONSE_INSTRUCTION, parse_json_content
@@ -22,6 +21,7 @@ from services.runtime.nodes.types.llm.common import (
     build_langchain_messages,
     extract_agent_result_content,
     render_template,
+    resolve_langfuse_handler,
     resolve_llm_settings,
     resolve_llm_system_prompt,
     validate_llm_settings,
@@ -115,9 +115,8 @@ def _build_langfuse_invoke_config(
     session_id: Optional[str] = None,
 ) -> JSONMapping:
     langfuse_session_id = str(state.get(SESSION_ID_KEY) or session_id or "").strip() or None
-    shared_langfuse_handler = (execution_context or {}).get("langfuse_handler")
     shared_langfuse_metadata = dict((execution_context or {}).get("langfuse_metadata") or {})
-    langfuse_handler = shared_langfuse_handler or langfuse_callback_handler()
+    langfuse_handler = resolve_langfuse_handler(execution_context)
     langfuse_metadata = {
         **shared_langfuse_metadata,
         **get_langfuse_metadata(
@@ -214,13 +213,23 @@ def _run_agent_llm_node(
         content = _apply_confidence_check(content, config=config, node_name=node_name)
 
         agent_span_output = {
+            "node_name": node_name,
+            "provider": settings.provider,
+            "model": (
+                settings.azure_deployment
+                if settings.provider in ("azure_openai", "azure", "openai")
+                else settings.model_name
+            ),
             "output_key": settings.output_key,
             "status": "success",
+            "output": content,
         }
         return {**state, settings.output_key: content}
 
     except Exception as exc:
         agent_span_output = {
+            "node_name": node_name,
+            "provider": settings.provider,
             "output_key": settings.output_key,
             "status": "error",
             "error": str(exc),

@@ -1,9 +1,16 @@
 import contextvars
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from base.utilities.langfuse_client_utility import LangfuseClientWrapper
 
 _current_trace: contextvars.ContextVar[Any] = contextvars.ContextVar("langfuse_current_trace", default=None)
+
+
+@dataclass(slots=True)
+class _ObservationScope:
+    manager: Any = None
+    token: Any = None
 
 
 def _get_langfuse_client():
@@ -20,6 +27,59 @@ def _to_serializable(value: Any):
     if isinstance(value, tuple):
         return [_to_serializable(v) for v in value]
     return str(value)
+
+
+def _build_error_details(output_payload: Any = None) -> str | None:
+    if isinstance(output_payload, dict):
+        if output_payload.get("status") == "error" and output_payload.get("error") is not None:
+            return str(output_payload["error"])
+        if output_payload.get("_error") is not None:
+            return str(output_payload["_error"])
+    return None
+
+
+def _update_observation(
+    observation: Any,
+    *,
+    output_payload: Any = None,
+    error: str | None = None,
+    metadata: Optional[dict] = None,
+):
+    if observation is None or not hasattr(observation, "update"):
+        return
+
+    resolved_error = error or _build_error_details(output_payload)
+    kwargs: Dict[str, Any] = {}
+    if output_payload is not None:
+        kwargs["output"] = _to_serializable(output_payload)
+    if metadata:
+        kwargs["metadata"] = _to_serializable(metadata)
+    if resolved_error:
+        kwargs["level"] = "ERROR"
+        kwargs["status_message"] = resolved_error
+    if not kwargs:
+        return
+
+    try:
+        observation.update(**kwargs)
+    except Exception:
+        return
+
+
+def get_current_trace_context() -> dict[str, str] | None:
+    observation = _current_trace.get()
+    if observation is None:
+        return None
+
+    trace_id = getattr(observation, "trace_id", None)
+    observation_id = getattr(observation, "id", None)
+    if trace_id is None:
+        return None
+
+    trace_context = {"trace_id": str(trace_id)}
+    if observation_id is not None:
+        trace_context["parent_span_id"] = str(observation_id)
+    return trace_context
 
 
 def start_run_trace(
@@ -42,38 +102,55 @@ def start_run_trace(
     }
 
     try:
-        trace_kwargs: Dict[str, Any] = {
-            "id": run_id,
-            "name": "LangGraph",
-            "input": _to_serializable(input_data),
-            "metadata": {**metadata, "trace_type": "langgraph"},
-        }
-        if session_id:
-            trace_kwargs["session_id"] = session_id
-        return client.trace(**trace_kwargs)
-    except TypeError:
-        # Older SDK compatibility.
-        try:
-            return client.trace(name="LangGraph", metadata={**metadata, "trace_type": "langgraph"})
-        except Exception:
-            return None
+        if hasattr(client, "start_observation"):
+            trace_kwargs: Dict[str, Any] = {
+                "name": "LangGraph",
+                "as_type": "chain",
+                "input": _to_serializable(input_data),
+                "metadata": {**metadata, "trace_type": "langgraph"},
+            }
+            if session_id:
+                trace_kwargs["metadata"]["session_id"] = session_id
+            return client.start_observation(**trace_kwargs)
+        if hasattr(client, "trace"):
+            trace_kwargs = {
+                "id": run_id,
+                "name": "LangGraph",
+                "input": _to_serializable(input_data),
+                "metadata": {**metadata, "trace_type": "langgraph"},
+            }
+            if session_id:
+                trace_kwargs["session_id"] = session_id
+            return client.trace(**trace_kwargs)
     except Exception:
         return None
 
+    return None
 
-def update_run_trace(trace: Any, status: str, output_data: Optional[dict] = None, error: Optional[str] = None):
+
+def update_run_trace(
+    trace: Any,
+    status: str,
+    output_data: Optional[dict] = None,
+    error: Optional[str] = None,
+    metadata: Optional[dict] = None,
+):
     if trace is None:
         return
 
-    metadata = {"status": status}
+    resolved_metadata = dict(metadata or {})
+    resolved_metadata["status"] = status
     if error:
-        metadata["error"] = error
+        resolved_metadata["error"] = error
 
     try:
         if hasattr(trace, "update"):
-            kwargs: Dict[str, Any] = {"metadata": metadata}
+            kwargs: Dict[str, Any] = {"metadata": _to_serializable(resolved_metadata)}
             if output_data is not None:
                 kwargs["output"] = _to_serializable(output_data)
+            if error:
+                kwargs["level"] = "ERROR"
+                kwargs["status_message"] = error
             trace.update(**kwargs)
     except Exception:
         return
@@ -100,8 +177,8 @@ def log_llm_generation(
     metadata: Optional[dict] = None,
 ):
     """Log an LLM generation under the current trace when available."""
-    trace = _current_trace.get()
-    if trace is None:
+    observation = _current_trace.get()
+    if observation is None:
         return
 
     base_metadata = {"provider": provider}
@@ -120,19 +197,43 @@ def log_llm_generation(
         kwargs["output"] = _to_serializable(output_payload)
 
     try:
-        if hasattr(trace, "generation"):
-            generation = trace.generation(**kwargs)
-            if error and hasattr(generation, "end"):
-                generation.end(output=_to_serializable({"error": error}))
+        if hasattr(observation, "start_observation"):
+            generation = observation.start_observation(as_type="generation", **kwargs)
+            _update_observation(
+                generation,
+                output_payload=output_payload if output_payload is not None else {"error": error} if error else None,
+                error=error,
+            )
+            if hasattr(generation, "end"):
+                generation.end()
+            return
+        if hasattr(observation, "generation"):
+            generation = observation.generation(**kwargs)
+            _update_observation(
+                generation,
+                output_payload=output_payload if output_payload is not None else {"error": error} if error else None,
+                error=error,
+            )
+            if hasattr(generation, "end"):
+                generation.end()
             return
     except Exception:
         pass
 
     try:
-        if hasattr(trace, "span"):
-            span = trace.span(name=name, input=_to_serializable(input_payload), metadata=_to_serializable(base_metadata))
+        if hasattr(observation, "span"):
+            span = observation.span(
+                name=name,
+                input=_to_serializable(input_payload),
+                metadata=_to_serializable(base_metadata),
+            )
+            _update_observation(
+                span,
+                output_payload=output_payload if output_payload is not None else {"error": error} if error else None,
+                error=error,
+            )
             if hasattr(span, "end"):
-                span.end(output=_to_serializable(output_payload if output_payload is not None else {"error": error}))
+                span.end()
     except Exception:
         pass
 
@@ -144,8 +245,8 @@ def log_runtime_event(
     metadata: Optional[dict] = None,
 ):
     """Log a lightweight runtime span event under the current trace."""
-    trace = _current_trace.get()
-    if trace is None:
+    observation = _current_trace.get()
+    if observation is None:
         return
 
     kwargs: Dict[str, Any] = {
@@ -156,10 +257,17 @@ def log_runtime_event(
         kwargs["input"] = _to_serializable(input_payload)
 
     try:
-        if hasattr(trace, "span"):
-            span = trace.span(**kwargs)
+        if hasattr(observation, "start_observation"):
+            span = observation.start_observation(as_type="span", **kwargs)
+            _update_observation(span, output_payload=output_payload)
             if hasattr(span, "end"):
-                span.end(output=_to_serializable(output_payload))
+                span.end()
+            return
+        if hasattr(observation, "span"):
+            span = observation.span(**kwargs)
+            _update_observation(span, output_payload=output_payload)
+            if hasattr(span, "end"):
+                span.end()
             return
     except Exception:
         pass
@@ -171,8 +279,8 @@ def start_runtime_span(
     metadata: Optional[dict] = None,
 ):
     """Start a runtime span under the current trace and return it."""
-    trace = _current_trace.get()
-    if trace is None:
+    observation = _current_trace.get()
+    if observation is None:
         return None
 
     kwargs: Dict[str, Any] = {
@@ -183,21 +291,24 @@ def start_runtime_span(
         kwargs["input"] = _to_serializable(input_payload)
 
     try:
-        if hasattr(trace, "span"):
-            return trace.span(**kwargs)
+        if hasattr(observation, "start_observation"):
+            return observation.start_observation(as_type="span", **kwargs)
+        if hasattr(observation, "span"):
+            return observation.span(**kwargs)
     except Exception:
         return None
 
     return None
 
 
-def end_runtime_span(span: Any, output_payload: Any = None):
+def end_runtime_span(span: Any, output_payload: Any = None, error: str | None = None):
     if span is None:
         return
 
     try:
+        _update_observation(span, output_payload=output_payload, error=error)
         if hasattr(span, "end"):
-            span.end(output=_to_serializable(output_payload))
+            span.end()
     except Exception:
         pass
 
@@ -211,8 +322,8 @@ def start_current_runtime_span(
     Start a child observation as the current Langfuse scope when supported.
     Returns `(observation, scope)` where `scope` is a context manager that must be exited.
     """
-    trace = _current_trace.get()
-    if trace is None:
+    observation = _current_trace.get()
+    if observation is None:
         return None, None
 
     kwargs: Dict[str, Any] = {
@@ -224,13 +335,23 @@ def start_current_runtime_span(
         kwargs["input"] = _to_serializable(input_payload)
 
     try:
-        if hasattr(trace, "start_as_current_observation"):
-            scope = trace.start_as_current_observation(**kwargs)
-            return scope.__enter__(), scope
+        if hasattr(observation, "start_as_current_observation"):
+            manager = observation.start_as_current_observation(**kwargs)
+            child_observation = manager.__enter__()
+            return child_observation, _ObservationScope(
+                manager=manager,
+                token=set_current_trace(child_observation),
+            )
     except Exception:
-        return start_runtime_span(name, input_payload=input_payload, metadata=metadata), None
+        span = start_runtime_span(name, input_payload=input_payload, metadata=metadata)
+        if span is None:
+            return None, None
+        return span, _ObservationScope(token=set_current_trace(span))
 
-    return start_runtime_span(name, input_payload=input_payload, metadata=metadata), None
+    span = start_runtime_span(name, input_payload=input_payload, metadata=metadata)
+    if span is None:
+        return None, None
+    return span, _ObservationScope(token=set_current_trace(span))
 
 
 def end_current_runtime_span(
@@ -238,21 +359,19 @@ def end_current_runtime_span(
     scope: Any = None,
     output_payload: Any = None,
 ):
-    if scope is not None:
-        # start_as_current_observation path — set output via update() before
-        # the scope exit finalises the observation, because span.end() is a
-        # no-op on these observation objects in Langfuse SDK 4.x.
-        try:
-            if span is not None and hasattr(span, "update"):
-                span.update(output=_to_serializable(output_payload))
-        except Exception:
-            pass
-        try:
-            scope.__exit__(None, None, None)
-        except Exception:
-            pass
-    else:
-        end_runtime_span(span, output_payload=output_payload)
+    wrapped_scope = scope if isinstance(scope, _ObservationScope) else _ObservationScope(manager=scope)
+    try:
+        if wrapped_scope.manager is not None:
+            _update_observation(span, output_payload=output_payload)
+            try:
+                wrapped_scope.manager.__exit__(None, None, None)
+            except Exception:
+                pass
+        else:
+            end_runtime_span(span, output_payload=output_payload)
+    finally:
+        if wrapped_scope.token is not None:
+            reset_current_trace(wrapped_scope.token)
 
 
 def flush_langfuse():

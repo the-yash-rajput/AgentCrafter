@@ -124,10 +124,6 @@ class AgentLLMRuntimeTests(unittest.TestCase):
             },
         ), patch.object(
             agent_module,
-            "langfuse_callback_handler",
-            side_effect=AssertionError("unexpected fallback handler creation"),
-        ), patch.object(
-            agent_module,
             "get_langfuse_metadata",
             return_value={},
         ):
@@ -324,6 +320,10 @@ class AgentLLMRuntimeTests(unittest.TestCase):
             sys.modules,
             {"services.runtime.nodes.types.llm.chat": chat_stub},
             clear=False,
+        ), patch.object(
+            agent_module,
+            "_agent_runtime_is_available",
+            return_value=False,
         ):
             runner = build_agent_llm_node(
                 {"provider": "azure_openai", "model": "test-model"},

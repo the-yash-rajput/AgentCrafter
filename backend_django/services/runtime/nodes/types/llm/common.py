@@ -7,9 +7,11 @@ from typing import Any
 
 from jinja2 import Template
 
+from base.handlers.langfuse_handler import langfuse_callback_handler
 from base.utilities.langchain_agent_prompt_utilities import get_prompt_with_env
 from services.session_history import CONVERSATION_HISTORY_KEY, normalize_conversation_history
-from type_defs import JSONMapping, StatePayload
+from services.runtime.langfuse_tracing import get_current_trace_context
+from type_defs import ExecutionContext, JSONMapping, StatePayload
 
 
 @dataclass(slots=True)
@@ -105,6 +107,21 @@ def build_langchain_messages(messages: list[dict[str, str]]) -> list[Any]:
             langchain_messages.append(HumanMessage(content=content))
 
     return langchain_messages
+
+
+def resolve_langfuse_handler(execution_context: ExecutionContext | None = None):
+    current_trace_context = get_current_trace_context()
+    if current_trace_context:
+        scoped_handler = langfuse_callback_handler(trace_context=current_trace_context)
+        if scoped_handler is not None:
+            return scoped_handler
+
+    shared_handler = (execution_context or {}).get("langfuse_handler")
+    if shared_handler is not None:
+        return shared_handler
+
+    root_trace_context = dict((execution_context or {}).get("langfuse_trace_context") or {})
+    return langfuse_callback_handler(trace_context=root_trace_context or None)
 
 
 def resolve_llm_system_prompt(config: JSONMapping, state: StatePayload) -> tuple[str, JSONMapping]:

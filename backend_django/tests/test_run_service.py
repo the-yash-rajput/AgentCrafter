@@ -14,7 +14,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 def _load_run_service_module():
     class _Run:
-        pass
+        id = "id"
 
     class _AgentSession:
         pass
@@ -26,6 +26,8 @@ def _load_run_service_module():
         "models.agent_session": types.SimpleNamespace(AgentSession=_AgentSession),
         "schemas.schemas": types.SimpleNamespace(SessionRunCreate=object),
         "services.runtime.graph_runner": types.SimpleNamespace(GraphRunner=object),
+        "services.runtime.graph_runtime": types.SimpleNamespace(),
+        "services.runtime.graph_runtime.fetcher": types.SimpleNamespace(GraphRuntimeRepository=object),
         "services.session_service": types.SimpleNamespace(SessionService=object),
         "services.session_history": types.SimpleNamespace(
             CONVERSATION_HISTORY_KEY="conversation_history",

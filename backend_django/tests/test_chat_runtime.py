@@ -78,7 +78,7 @@ class ChatRuntimeTests(unittest.TestCase):
             },
         ), patch.object(
             chat_module,
-            "langfuse_callback_handler",
+            "_resolve_langfuse_handler",
             return_value=None,
         ), patch.object(
             chat_module,
@@ -139,10 +139,6 @@ class ChatRuntimeTests(unittest.TestCase):
                     AzureChatOpenAI=lambda **_kwargs: fake_llm
                 ),
             },
-        ), patch.object(
-            chat_module,
-            "langfuse_callback_handler",
-            side_effect=AssertionError("unexpected fallback handler creation"),
         ), patch.object(
             chat_module,
             "_build_langchain_messages",

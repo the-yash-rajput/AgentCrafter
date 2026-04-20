@@ -7,6 +7,7 @@ from models import Run
 from services.runtime.graph_runtime.dtos import GraphFetchResult, TraceSession
 from services.runtime.langfuse_tracing import (
     flush_langfuse,
+    get_current_trace_context,
     reset_current_trace,
     set_current_trace,
     update_run_trace,
@@ -32,6 +33,9 @@ class LangGraphTraceService:
             session_id=session_id,
             tags=[graph_data.agent.name],
             agent_name=graph_data.agent.name,
+            agent_id=str(graph_data.agent.id),
+            run_id=str(run.id),
+            trace_type="langgraph",
         )
         try:
             from langfuse import get_client, propagate_attributes
@@ -45,13 +49,15 @@ class LangGraphTraceService:
                 input_data=dict(input_data or {}),
                 session_id=session_id,
             )
-            callback_handler = langfuse_callback_handler()
             token = set_current_trace(trace)
+            trace_context = get_current_trace_context() or {}
+            callback_handler = langfuse_callback_handler(trace_context=trace_context or None)
             return TraceSession(
                 trace=trace,
                 token=token,
                 callback_handler=callback_handler,
                 metadata=metadata,
+                trace_context=trace_context,
             )
 
         client = get_client()
@@ -65,13 +71,15 @@ class LangGraphTraceService:
                 input_data=dict(input_data or {}),
                 session_id=session_id,
             )
-            callback_handler = langfuse_callback_handler()
             token = set_current_trace(trace)
+            trace_context = get_current_trace_context() or {}
+            callback_handler = langfuse_callback_handler(trace_context=trace_context or None)
             return TraceSession(
                 trace=trace,
                 token=token,
                 callback_handler=callback_handler,
                 metadata=metadata,
+                trace_context=trace_context,
             )
 
         exit_stack = ExitStack()
@@ -88,27 +96,47 @@ class LangGraphTraceService:
                 as_type="chain",
                 name="LangGraph",
                 input=dict(input_data or {}),
+                metadata=metadata,
             )
         )
-        callback_handler = langfuse_callback_handler()
         token = set_current_trace(trace)
+        trace_context = get_current_trace_context() or {}
+        callback_handler = langfuse_callback_handler(trace_context=trace_context or None)
         return TraceSession(
             trace=trace,
             token=token,
             exit_stack=exit_stack,
             callback_handler=callback_handler,
             metadata=metadata,
+            trace_context=trace_context,
         )
 
     def mark_success(self, session: TraceSession, output_data: StatePayload) -> None:
-        update_run_trace(session.trace, status="success", output_data=output_data)
+        update_run_trace(
+            session.trace,
+            status="success",
+            output_data=output_data,
+            metadata=session.metadata,
+        )
         flush_langfuse()
 
     def mark_failure(self, session: TraceSession, output_data: StatePayload, error: str) -> None:
-        update_run_trace(session.trace, status="failed", output_data=output_data, error=error)
+        update_run_trace(
+            session.trace,
+            status="failed",
+            output_data=output_data,
+            error=error,
+            metadata=session.metadata,
+        )
         flush_langfuse()
 
     def close(self, session: TraceSession) -> None:
         reset_current_trace(session.token)
         if session.exit_stack is not None:
             session.exit_stack.close()
+            return
+        if session.trace is not None and hasattr(session.trace, "end"):
+            try:
+                session.trace.end()
+            except Exception:
+                pass
