@@ -847,6 +847,7 @@ const GraphEditorInner = () => {
       {showSchemaEditor && (
         <StateSchemaEditor
           agent={agent}
+          versionId={versionId ? Number(versionId) : null}
           onClose={() => setShowSchemaEditor(false)}
           onUpdate={(updated) => setAgent(updated)}
         />

@@ -35,6 +35,7 @@ from .serializers import (
     NodeDefinitionResponseSerializer,
     NodeResponseSerializer,
     NodeUpdateSerializer,
+    VersionPatchSerializer,
 )
 
 
@@ -141,13 +142,25 @@ class VersionListView(APIView):
 
 
 class VersionDetailView(APIView):
-    """GET /api/agents/{agent_id}/versions/{version_id}"""
+    """GET/PATCH /api/agents/{agent_id}/versions/{version_id}"""
 
     def get(self, request, agent_id, version_id):
         from config.db import managed_db
         from services.agent_version_service import AgentVersionService
         with managed_db() as db:
             version = AgentVersionService(db).get_version(version_id, include_graph=True)
+        return Response(AgentVersionWithGraphSerializer(version).data)
+
+    def patch(self, request, agent_id, version_id):
+        from config.db import managed_db
+        from services.agent_version_service import AgentVersionService
+        ser = VersionPatchSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        state_schema = ser.validated_data.get("state_schema")
+        if state_schema is None:
+            return Response({"detail": "state_schema is required"}, status=status.HTTP_400_BAD_REQUEST)
+        with managed_db() as db:
+            version = AgentVersionService(db).update_state_schema(version_id, state_schema)
         return Response(AgentVersionWithGraphSerializer(version).data)
 
 

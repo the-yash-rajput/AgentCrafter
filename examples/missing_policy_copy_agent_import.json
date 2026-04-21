@@ -6,285 +6,317 @@
   },
   "version": {
     "version_number": 1,
-    "entry_node": "extract_identifier",
+    "entry_node": "Data Identifier",
     "exit_nodes": [
-      "respond_ask_identifier",
+      "Ask For Identifier",
       "respond_share_policy",
       "escalate_ownership_mismatch",
       "respond_wait",
       "escalate_timeout"
     ],
     "state_schema": {
-      "ticket_id":             { "type": "string",  "default": "TKT-000" },
-      "message":               { "type": "string",  "default": "" },
-      "dp_id":                 { "type": "string",  "default": "" },
-      "identifier_extraction": { "type": "object",  "default": {} },
-      "mis_result":            { "type": "object",  "default": {} },
-      "ownership_result":      { "type": "object",  "default": {} },
-      "transaction_timing":    { "type": "object",  "default": {} },
-      "response":              { "type": "string",  "default": "" }
+      "dp_id": {
+        "type": "str",
+        "default": "1234",
+        "description": "",
+        "is_session_id": false
+      },
+      "message": {
+        "type": "string",
+        "default": "",
+        "description": "",
+        "is_session_id": false
+      },
+      "response": {
+        "type": "string",
+        "default": "",
+        "description": "",
+        "is_session_id": false
+      },
+      "ticket_id": {
+        "type": "string",
+        "default": "TKT-000",
+        "description": "",
+        "is_session_id": false
+      },
+      "mis_result": {
+        "type": "dict",
+        "default": {},
+        "description": "",
+        "is_session_id": false
+      },
+      "hours_elapsed": {
+        "type": "str",
+        "default": {},
+        "description": "",
+        "is_session_id": false
+      },
+      "ownership_result": {
+        "type": "bool",
+        "default": {},
+        "description": "",
+        "is_session_id": false
+      },
+      "identifier_extraction": {
+        "type": "object",
+        "default": {},
+        "description": "",
+        "is_session_id": false
+      }
     }
   },
   "nodes": [
     {
-      "name": "extract_identifier",
+      "name": "Data Identifier",
       "type": "llm_call",
       "subtype": "llm_agent",
       "config": {
-        "node_type": "llm_call",
+        "model": "ai-agent-4o",
         "llm_type": "llm_agent",
         "provider": "azure_openai",
-        "model": "ai-agent-4o",
-        "api_key_env_var": "AZURE_OPENAI_API_KEY",
-        "use_langfuse_prompt": false,
-        "langfuse_prompt_name": "",
-        "system_prompt": "You are an intelligent ticket parser for a motor insurance support system. Your task is to extract policy identifiers from support ticket content. Always return a JSON object with the exact schema provided.",
-        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nMessage from DP:\n{{message}}\n\nExtract any vehicle registration number (e.g. MH12AB1234) or transaction reference number from the message. Set has_identifier to true if at least one is found, false otherwise. If not found, return empty strings for the identifier fields.",
-        "temperature": 0.1,
+        "node_type": "llm_call",
         "max_tokens": 300,
         "output_key": "identifier_extraction",
+        "temperature": 0.1,
+        "system_prompt": "You are an intelligent ticket parser for a motor insurance support system. Your task is to extract policy identifiers from support ticket content. Always return a JSON object with the exact schema provided.",
+        "confidence_key": "confidence",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
         "parse_json_response": false,
-        "structured_output_enabled": true,
-        "structured_output_schema": {
-          "title": "IdentifierExtraction",
-          "type": "object",
-          "properties": {
-            "has_identifier":    { "type": "boolean", "description": "True if a vehicle number or reference number was found" },
-            "vehicle_number":    { "type": "string",  "description": "Vehicle registration number if found, else empty string" },
-            "reference_number":  { "type": "string",  "description": "Transaction reference number if found, else empty string" }
-          },
-          "required": ["has_identifier", "vehicle_number", "reference_number"],
-          "additionalProperties": false
-        },
-        "confidence_threshold_enabled": false,
+        "use_langfuse_prompt": false,
         "confidence_threshold": 0.7,
-        "confidence_key": "confidence"
+        "langfuse_prompt_name": "",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\n\nMessage from DP:\n{{message}}\n\nExtract any vehicle registration number (e.g. MH12AB1234) or transaction reference number from the message. Set has_identifier to true if at least one is found, false otherwise. If not found, return empty strings for the identifier fields.",
+        "structured_output_schema": "{\n  \"type\": \"object\",\n  \"title\": \"IdentifierExtraction\",\n  \"required\": [\n    \"has_identifier\",\n    \"vehicle_number\",\n    \"reference_number\"\n  ],\n  \"properties\": {\n    \"has_identifier\": {\n      \"type\": \"boolean\",\n      \"description\": \"True if a vehicle number or reference number was found\"\n    },\n    \"vehicle_number\": {\n      \"type\": \"string\",\n      \"description\": \"Vehicle registration number if found, else empty string\"\n    },\n    \"reference_number\": {\n      \"type\": \"string\",\n      \"description\": \"Transaction reference number if found, else empty string\"\n    }\n  },\n  \"additionalProperties\": false\n}",
+        "structured_output_enabled": true,
+        "confidence_threshold_enabled": false
       },
-      "position_x": 100,
-      "position_y": 300
+      "position_x": -168,
+      "position_y": 0
     },
-
     {
-      "name": "respond_ask_identifier",
+      "name": "Ask For Identifier",
       "type": "llm_call",
       "subtype": "llm_agent",
       "config": {
-        "node_type": "llm_call",
+        "model": "ai-agent-4o",
         "llm_type": "llm_agent",
         "provider": "azure_openai",
-        "model": "ai-agent-4o",
-        "api_key_env_var": "AZURE_OPENAI_API_KEY",
-        "use_langfuse_prompt": false,
-        "langfuse_prompt_name": "",
-        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal system names, tools, or workflows. Keep the response short and friendly.",
-        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe DP has not provided a vehicle registration number or transaction reference number. Write a short, friendly reply asking them to share one so we can retrieve the policy for them.",
-        "temperature": 0.4,
+        "node_type": "llm_call",
         "max_tokens": 200,
         "output_key": "response",
+        "temperature": 0.4,
+        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal system names, tools, or workflows. Keep the response short and friendly.",
+        "confidence_key": "confidence",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
         "parse_json_response": false,
-        "structured_output_enabled": false,
-        "confidence_threshold_enabled": false,
+        "use_langfuse_prompt": false,
         "confidence_threshold": 0.7,
-        "confidence_key": "confidence"
+        "langfuse_prompt_name": "",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}} \n\nThe DP has not provided a vehicle registration number or transaction reference number. Write a short, friendly reply asking them to share one so we can retrieve the policy copy for them. \n\nReply message example:- \nHi, could you please share your vehicle registration number or transaction reference number? This will help us quickly retrieve your policy copy. Thanks!",
+        "structured_output_schema": "",
+        "structured_output_enabled": false,
+        "confidence_threshold_enabled": false
       },
-      "position_x": 400,
-      "position_y": 100
+      "position_x": 3,
+      "position_y": 220
     },
-
     {
-      "name": "lookup_policy_mis",
+      "name": "Search Policy Copy",
       "type": "communication",
       "subtype": "api",
       "config": {
-        "node_type": "communication",
-        "communication_type": "api",
         "api": {
-          "url": "https://httpbin.org/post",
+          "url": "https://ppolicy.free.beeceptor.com/policy-details",
           "method": "POST",
-          "headers": { "Content-Type": "application/json" },
-          "body_template": "{\"vehicle_number\": \"{{identifier_extraction.vehicle_number}}\", \"reference_number\": \"{{identifier_extraction.reference_number}}\", \"dp_id\": \"{{dp_id}}\"}",
-          "output_key": "mis_result"
-        },
-        "rabbitmq_message": {
-          "host": "localhost", "port": 5672, "exchange": "", "routing_key": "",
-          "queue": "", "payload_template": "{}", "output_key": "rabbitmq_result"
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "output_key": "mis_result",
+          "body_template": "{\"vehicle_number\": \"{{identifier_extraction.vehicle_number}}\", \"reference_number\": \"{{identifier_extraction.reference_number}}\", \"dp_id\": \"{{dp_id}}\"}"
         },
         "kafka": {
-          "bootstrap_servers": "localhost:9092", "topic": "", "key_template": "",
-          "payload_template": "{}", "output_key": "kafka_result"
-        }
-      },
-      "position_x": 400,
-      "position_y": 300
-    },
-
-    {
-      "name": "validate_dp_ownership",
-      "type": "communication",
-      "subtype": "api",
-      "config": {
+          "topic": "",
+          "output_key": "kafka_result",
+          "key_template": "",
+          "payload_template": "{}",
+          "bootstrap_servers": "localhost:9092"
+        },
         "node_type": "communication",
-        "communication_type": "api",
-        "api": {
-          "url": "https://httpbin.org/post",
-          "method": "POST",
-          "headers": { "Content-Type": "application/json" },
-          "body_template": "{\"dp_id\": \"{{dp_id}}\", \"policy_dp_id\": \"{{mis_result.dp_id}}\", \"policy_id\": \"{{mis_result.policy_id}}\"}",
-          "output_key": "ownership_result"
-        },
         "rabbitmq_message": {
-          "host": "localhost", "port": 5672, "exchange": "", "routing_key": "",
-          "queue": "", "payload_template": "{}", "output_key": "rabbitmq_result"
+          "host": "localhost",
+          "port": 5672,
+          "queue": "",
+          "exchange": "",
+          "output_key": "rabbitmq_result",
+          "routing_key": "",
+          "payload_template": "{}"
         },
-        "kafka": {
-          "bootstrap_servers": "localhost:9092", "topic": "", "key_template": "",
-          "payload_template": "{}", "output_key": "kafka_result"
-        }
+        "communication_type": "api"
       },
-      "position_x": 700,
-      "position_y": 200
+      "position_x": -249,
+      "position_y": 220
     },
-
-    {
-      "name": "check_transaction_time",
-      "type": "communication",
-      "subtype": "api",
-      "config": {
-        "node_type": "communication",
-        "communication_type": "api",
-        "api": {
-          "url": "https://httpbin.org/post",
-          "method": "POST",
-          "headers": { "Content-Type": "application/json" },
-          "body_template": "{\"vehicle_number\": \"{{identifier_extraction.vehicle_number}}\", \"reference_number\": \"{{identifier_extraction.reference_number}}\"}",
-          "output_key": "transaction_timing"
-        },
-        "rabbitmq_message": {
-          "host": "localhost", "port": 5672, "exchange": "", "routing_key": "",
-          "queue": "", "payload_template": "{}", "output_key": "rabbitmq_result"
-        },
-        "kafka": {
-          "bootstrap_servers": "localhost:9092", "topic": "", "key_template": "",
-          "payload_template": "{}", "output_key": "kafka_result"
-        }
-      },
-      "position_x": 700,
-      "position_y": 450
-    },
-
     {
       "name": "respond_share_policy",
       "type": "llm_call",
       "subtype": "llm_agent",
       "config": {
-        "node_type": "llm_call",
+        "model": "ai-agent-4o",
         "llm_type": "llm_agent",
         "provider": "azure_openai",
-        "model": "ai-agent-4o",
-        "api_key_env_var": "AZURE_OPENAI_API_KEY",
-        "use_langfuse_prompt": false,
-        "langfuse_prompt_name": "",
-        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal system names, tools, or workflows. Keep the response short and friendly.",
-        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe policy copy has been located and ownership verified. Write a short, friendly message confirming the policy copy has been shared with the DP and the request is resolved.",
-        "temperature": 0.4,
+        "node_type": "llm_call",
         "max_tokens": 200,
         "output_key": "response",
+        "temperature": 0.4,
+        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal system names, tools, or workflows. Keep the response short and friendly.",
+        "confidence_key": "confidence",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
         "parse_json_response": false,
-        "structured_output_enabled": false,
-        "confidence_threshold_enabled": false,
+        "use_langfuse_prompt": false,
         "confidence_threshold": 0.7,
-        "confidence_key": "confidence"
+        "langfuse_prompt_name": "",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP Message: {{message}}\n\nThe policy copy has been successfully located, and ownership has been verified.\n\nWrite a short, friendly, and professional response confirming that:\n- The policy copy has been shared with the DP\n- The request has been successfully resolved\n\nReference the policy Copy ID: {{mis_result.policy_copy}}\n\n\nReply Example Formate:\n\nHi, your policy copy has been successfully retrieved and shared with you. The request has been completed and resolved.\n\nPolicy Copy ID: {{mis_result.policy_copy}}",
+        "structured_output_schema": "",
+        "structured_output_enabled": false,
+        "confidence_threshold_enabled": false
       },
-      "position_x": 1000,
-      "position_y": 100
+      "position_x": -602,
+      "position_y": 660
     },
-
     {
       "name": "escalate_ownership_mismatch",
       "type": "llm_call",
       "subtype": "llm_agent",
       "config": {
-        "node_type": "llm_call",
+        "model": "ai-agent-4o",
         "llm_type": "llm_agent",
         "provider": "azure_openai",
-        "model": "ai-agent-4o",
-        "api_key_env_var": "AZURE_OPENAI_API_KEY",
-        "use_langfuse_prompt": false,
-        "langfuse_prompt_name": "",
-        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal systems, Ops teams, or escalation workflows. Reassure the DP that the team is looking into their request.",
-        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe ownership details need manual verification. Write a short, professional message telling the DP their request has been escalated and the team will get back to them shortly.",
-        "temperature": 0.4,
+        "node_type": "llm_call",
         "max_tokens": 200,
         "output_key": "response",
+        "temperature": 0.4,
+        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal systems, Ops teams, or escalation workflows. Reassure the DP that the team is looking into their request.",
+        "confidence_key": "confidence",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
         "parse_json_response": false,
-        "structured_output_enabled": false,
-        "confidence_threshold_enabled": false,
+        "use_langfuse_prompt": false,
         "confidence_threshold": 0.7,
-        "confidence_key": "confidence"
+        "langfuse_prompt_name": "",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe ownership details need manual verification. Write a short, professional message telling the DP their request has been escalated and the team will get back to them shortly.\n\nReply example formate:-\n\nHi, your request has been escalated for manual verification of ownership details. Our team will review it and get back to you shortly. Thank you for your patience.",
+        "structured_output_schema": "",
+        "structured_output_enabled": false,
+        "confidence_threshold_enabled": false
       },
-      "position_x": 1000,
-      "position_y": 300
+      "position_x": -283,
+      "position_y": 660
     },
-
     {
       "name": "respond_wait",
       "type": "llm_call",
       "subtype": "llm_agent",
       "config": {
-        "node_type": "llm_call",
+        "model": "ai-agent-4o",
         "llm_type": "llm_agent",
         "provider": "azure_openai",
-        "model": "ai-agent-4o",
-        "api_key_env_var": "AZURE_OPENAI_API_KEY",
-        "use_langfuse_prompt": false,
-        "langfuse_prompt_name": "",
-        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal system names, processing pipelines, or Ops workflows.",
-        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe policy was transacted recently (less than 3 hours ago) and the copy is still being generated. Write a short, friendly message telling the DP the document will be available within 3 hours of the transaction time and to check back shortly.",
-        "temperature": 0.4,
+        "node_type": "llm_call",
         "max_tokens": 200,
         "output_key": "response",
+        "temperature": 0.4,
+        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal system names, processing pipelines, or Ops workflows.",
+        "confidence_key": "confidence",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
         "parse_json_response": false,
-        "structured_output_enabled": false,
-        "confidence_threshold_enabled": false,
+        "use_langfuse_prompt": false,
         "confidence_threshold": 0.7,
-        "confidence_key": "confidence"
+        "langfuse_prompt_name": "",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe policy was transacted recently (less than 3 hours ago) and the copy is still being generated. Write a short, friendly message telling the DP the document will be available within 3 hours of the transaction time and to check back shortly.\n\n\nReply example formate:-\n\nHi, your policy was transacted recently and the document is currently being generated. It will be available within 3 hours of the transaction time. Please check back shortly. Thank you!",
+        "structured_output_schema": "",
+        "structured_output_enabled": false,
+        "confidence_threshold_enabled": false
       },
-      "position_x": 1000,
-      "position_y": 450
+      "position_x": 36,
+      "position_y": 660
     },
-
     {
       "name": "escalate_timeout",
       "type": "llm_call",
       "subtype": "llm_agent",
       "config": {
-        "node_type": "llm_call",
+        "model": "ai-agent-4o",
         "llm_type": "llm_agent",
         "provider": "azure_openai",
-        "model": "ai-agent-4o",
-        "api_key_env_var": "AZURE_OPENAI_API_KEY",
-        "use_langfuse_prompt": false,
-        "langfuse_prompt_name": "",
-        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal systems, Ops teams, or escalation workflows. Be empathetic and reassure the DP that the matter will be resolved.",
-        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe policy copy has not been generated even though more than 3 hours have passed since the transaction. Write a short, empathetic message telling the DP that their request is being prioritised and the team will resolve it as soon as possible.",
-        "temperature": 0.4,
+        "node_type": "llm_call",
         "max_tokens": 200,
         "output_key": "response",
+        "temperature": 0.4,
+        "system_prompt": "You are a polite and professional insurance support agent responding to a distributor partner (DP). Always write in simple, clear language. Never mention internal systems, Ops teams, or escalation workflows. Be empathetic and reassure the DP that the matter will be resolved.",
+        "confidence_key": "confidence",
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
         "parse_json_response": false,
-        "structured_output_enabled": false,
-        "confidence_threshold_enabled": false,
+        "use_langfuse_prompt": false,
         "confidence_threshold": 0.7,
-        "confidence_key": "confidence"
+        "langfuse_prompt_name": "",
+        "user_prompt_template": "Ticket ID: {{ticket_id}}\nDP message: {{message}}\n\nThe policy copy has not been generated even though more than 3 hours have passed since the transaction. Write a short, empathetic message telling the DP that their request is being prioritised and the team will resolve it as soon as possible.\n\nReply example formate:-\n\nHi, we understand the delay and sincerely apologize for the inconvenience. Your request is being prioritised, and our team is working to resolve it as soon as possible. Thank you for your patience.\n",
+        "structured_output_schema": "",
+        "structured_output_enabled": false,
+        "confidence_threshold_enabled": false
       },
-      "position_x": 1000,
-      "position_y": 600
+      "position_x": 355,
+      "position_y": 660
+    },
+    {
+      "name": "Check Dp Ownership",
+      "type": "functional",
+      "subtype": "python_inline",
+      "config": {
+        "node_type": "functional",
+        "agent_call": {
+          "input_key": "",
+          "input_mode": "entire_state",
+          "output_key": "agent_result",
+          "output_mode": "merge_state",
+          "input_template": "{\n  \"input\": \"{{input}}\"\n}",
+          "target_agent_id": "",
+          "target_agent_name": "",
+          "include_run_metadata": true
+        },
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "def run(state):\n    print(\"state\",state)\n    state['ownership_result'] = state.get('dp_id') == state.get('mis_result', {}).get('dp_id')\n    return state"
+        }
+      },
+      "position_x": -325.40794172405856,
+      "position_y": 426.85877410450996
+    },
+    {
+      "name": "Check transaction time",
+      "type": "functional",
+      "subtype": "python_inline",
+      "config": {
+        "node_type": "functional",
+        "agent_call": {
+          "input_key": "",
+          "input_mode": "entire_state",
+          "output_key": "agent_result",
+          "output_mode": "merge_state",
+          "input_template": "{\n  \"input\": \"{{input}}\"\n}",
+          "target_agent_id": "",
+          "target_agent_name": "",
+          "include_run_metadata": true
+        },
+        "function_type": "python_inline",
+        "python_inline": {
+          "code": "from datetime import datetime, timezone\n\ndef run(state):\n    mis_created_at_epoch = state.get('mis_result', {}).get('mis_created_at')\n    \n    current_time = datetime.now(timezone.utc).timestamp()\n    time_diff_h = None\n\n    if mis_created_at_epoch:\n        # Calculate difference in hours\n        time_diff_h = (current_time - mis_created_at_epoch) / 3600\n\n    # Example condition: check if within 3 hours\n    if time_diff_h is not None and time_diff_h <= 3:\n        state['hours_elapsed'] = True\n    else:\n        state['hours_elapsed'] = False\n\n    return state"
+        }
+      },
+      "position_x": 54.60257510729616,
+      "position_y": 440
     }
   ],
-
   "edges": [
     {
-      "source_node_name": "extract_identifier",
-      "target_node_name": "lookup_policy_mis",
+      "source_node_name": "Data Identifier",
+      "target_node_name": "Search Policy Copy",
       "edge_type": "conditional",
       "condition_config": {
         "condition_type": "python_expression",
@@ -292,11 +324,11 @@
           "expression": "state.get('identifier_extraction', {}).get('has_identifier', False)"
         }
       },
-      "label": "has_identifier"
+      "label": "Has Identifier"
     },
     {
-      "source_node_name": "extract_identifier",
-      "target_node_name": "respond_ask_identifier",
+      "source_node_name": "Data Identifier",
+      "target_node_name": "Ask For Identifier",
       "edge_type": "conditional",
       "condition_config": {
         "condition_type": "python_expression",
@@ -304,12 +336,11 @@
           "expression": "state.get('identifier_extraction', {}).get('has_identifier', False)"
         }
       },
-      "label": "no_identifier"
+      "label": "No Identifier"
     },
-
     {
-      "source_node_name": "lookup_policy_mis",
-      "target_node_name": "validate_dp_ownership",
+      "source_node_name": "Search Policy Copy",
+      "target_node_name": "Check Dp Ownership",
       "edge_type": "conditional",
       "condition_config": {
         "condition_type": "python_expression",
@@ -317,69 +348,75 @@
           "expression": "state.get('mis_result', {}).get('policy_exists', False)"
         }
       },
-      "label": "policy_exists"
+      "label": "Policy Copy Exists"
     },
     {
-      "source_node_name": "lookup_policy_mis",
-      "target_node_name": "check_transaction_time",
+      "source_node_name": "Search Policy Copy",
+      "target_node_name": "Check transaction time",
       "edge_type": "conditional",
       "condition_config": {
         "condition_type": "python_expression",
         "python_expression": {
-          "expression": "state.get('mis_result', {}).get('policy_exists', False)"
+          "expression": "not state.get('mis_result', {}).get('policy_exists', False)"
         }
       },
-      "label": "policy_missing"
+      "label": "Policy Copy Missing"
     },
-
     {
-      "source_node_name": "validate_dp_ownership",
+      "source_node_name": "Check Dp Ownership",
       "target_node_name": "respond_share_policy",
       "edge_type": "conditional",
       "condition_config": {
-        "condition_type": "python_expression",
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "ownership_result",
+          "value": "True"
+        },
         "python_expression": {
-          "expression": "state.get('ownership_result', {}).get('match', False)"
+          "expression": "state.get('ownership_result', False)"
         }
       },
-      "label": "ownership_match"
+      "label": "Ownership Match"
     },
     {
-      "source_node_name": "validate_dp_ownership",
+      "source_node_name": "Check Dp Ownership",
       "target_node_name": "escalate_ownership_mismatch",
       "edge_type": "conditional",
       "condition_config": {
-        "condition_type": "python_expression",
+        "condition_type": "state_key_equals",
+        "state_key_equals": {
+          "key": "ownership_result",
+          "value": "False"
+        },
         "python_expression": {
-          "expression": "state.get('ownership_result', {}).get('match', False)"
+          "expression": "state.get('ownership_result')"
         }
       },
-      "label": "ownership_mismatch"
+      "label": "Ownership Mismatch"
     },
-
     {
-      "source_node_name": "check_transaction_time",
+      "source_node_name": "Check transaction time",
       "target_node_name": "respond_wait",
       "edge_type": "conditional",
       "condition_config": {
         "condition_type": "python_expression",
         "python_expression": {
-          "expression": "state.get('transaction_timing', {}).get('hours_elapsed', 0) < 3"
+          "expression": "state.get('hours_elapsed')"
         }
       },
-      "label": "within_3_hours"
+      "label": "Within 3 Hours"
     },
     {
-      "source_node_name": "check_transaction_time",
+      "source_node_name": "Check transaction time",
       "target_node_name": "escalate_timeout",
       "edge_type": "conditional",
       "condition_config": {
         "condition_type": "python_expression",
         "python_expression": {
-          "expression": "state.get('transaction_timing', {}).get('hours_elapsed', 0) < 3"
+          "expression": "state.get('hours_elapsed')"
         }
       },
-      "label": "past_3_hours"
+      "label": "Past 3 Hours"
     }
   ]
 }

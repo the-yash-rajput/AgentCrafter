@@ -38,6 +38,7 @@ export const deleteEdge = (edgeId) => api.delete(`/edges/${edgeId}`).then(r => r
 // Versions
 export const getVersions = (agentId) => api.get(`/agents/${agentId}/versions`).then(r => r.data)
 export const getVersion = (agentId, versionId) => api.get(`/agents/${agentId}/versions/${versionId}`).then(r => r.data)
+export const patchVersion = (agentId, versionId, data) => api.patch(`/agents/${agentId}/versions/${versionId}`, data).then(r => r.data)
 export const forkVersion = (agentId, versionId) => api.post(`/agents/${agentId}/versions/${versionId}/fork`).then(r => r.data)
 
 // Sessions
