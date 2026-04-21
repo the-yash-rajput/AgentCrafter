@@ -95,6 +95,11 @@ class AgentVersionWithGraphSerializer(AgentVersionResponseSerializer):
     edges = EdgeResponseSerializer(many=True)
 
 
+class VersionPatchSerializer(serializers.Serializer):
+    """Validates PATCH /api/agents/{id}/versions/{vid} request body."""
+    state_schema = serializers.DictField(required=True)
+
+
 # ── Agent read serializers ────────────────────────────────────────────────────
 
 class AgentResponseSerializer(_SAModelSerializer):

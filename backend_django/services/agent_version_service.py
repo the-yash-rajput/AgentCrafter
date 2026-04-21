@@ -68,6 +68,19 @@ class AgentVersionService:
         self.db.refresh(version)
         return version
 
+    def update_state_schema(self, version_id: int, state_schema: dict) -> AgentVersion:
+        from sqlalchemy.orm.attributes import flag_modified
+        version = self.get_version(version_id)
+        version.state_schema = state_schema
+        flag_modified(version, "state_schema")
+        try:
+            self.db.commit()
+        except Exception as exc:
+            self.db.rollback()
+            raise ValidationError(f"Failed to update state schema: {exc}") from exc
+        self.db.refresh(version)
+        return version
+
     def fork_version(self, from_version_id: int) -> AgentVersion:
         source = self.get_version(from_version_id, include_graph=True)
         max_number = (

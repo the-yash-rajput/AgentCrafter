@@ -94,7 +94,11 @@ class LangGraphBuilder:
 
             if conditional_edges:
                 edge_list = [
-                    {"target": target_name, "label": edge.label or target_name}
+                    {
+                        "target": target_name,
+                        "label": edge.label or target_name,
+                        "condition_value": (edge.condition_config or {}).get("state_key_equals", {}).get("value", ""),
+                    }
                     for target_name, edge in conditional_edges
                 ]
                 router = build_condition_router(conditional_edges[0][1].condition_config or {}, edge_list)
