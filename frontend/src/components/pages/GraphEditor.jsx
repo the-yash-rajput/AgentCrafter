@@ -380,10 +380,15 @@ const GraphEditorInner = () => {
     const load = async () => {
       try {
         if (versionId) {
-          const versionData = await getVersion(agentId, versionId)
+          const [versionData, agentData] = await Promise.all([
+            getVersion(agentId, versionId),
+            getAgent(agentId).catch(() => null),
+          ])
           if (cancelled) return
-          // Load graph from version — combine with agent info for compatibility
+
+          // Version payloads do not include the base agent metadata used by the editor header.
           loadGraph({
+            ...(agentData || {}),
             ...versionData,
             id: Number(agentId),
             entry_node: versionData.entry_node,
