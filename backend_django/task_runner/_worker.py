@@ -10,6 +10,7 @@ import math
 import os
 import pickle
 import sys
+import threading
 import time
 import traceback
 import types
@@ -24,6 +25,40 @@ from task_runner.errors import (
     PythonTaskError,
 )
 from task_runner.restricted_globals import build_restricted_globals
+
+
+def _maxrss_bytes() -> int:
+    """Return current process RSS in bytes, platform-aware."""
+    try:
+        import resource as _r
+        rss = _r.getrusage(_r.RUSAGE_SELF).ru_maxrss
+        # macOS reports bytes; Linux/BSD report kilobytes
+        return rss if sys.platform == "darwin" else rss * 1024
+    except Exception:
+        return 0
+
+
+def _start_watchdog(timeout_seconds: float, max_memory_mb: int | None, started_at: float) -> None:
+    """Spawn a daemon thread that kills the child process if it blows resource budgets.
+
+    Enforces wall-clock time and RSS memory independently of OS rlimits,
+    which are unreliable on macOS for mmap-backed allocations. Calls
+    os._exit(137) — a hard, instant kill that the parent interprets as
+    an unexpected exit (empty queue + non-zero exitcode → PythonTaskError).
+    """
+    mem_limit_bytes = int(max_memory_mb * 1024 * 1024) if max_memory_mb else None
+
+    def _watch() -> None:
+        while True:
+            time.sleep(0.1)
+            elapsed = time.perf_counter() - started_at
+            if elapsed >= timeout_seconds:
+                os._exit(137)
+            if mem_limit_bytes is not None and _maxrss_bytes() >= mem_limit_bytes:
+                os._exit(137)
+
+    t = threading.Thread(target=_watch, daemon=True, name="sandbox-watchdog")
+    t.start()
 
 
 def _apply_resource_limits(payload: dict[str, Any]) -> None:
@@ -66,6 +101,11 @@ def _run_in_child(payload: dict[str, Any], result_queue: mp.Queue) -> None:
         os.umask(0o077)        # created files aren't world-readable
 
         _apply_resource_limits(payload)
+        _start_watchdog(
+            timeout_seconds=float(payload.get("timeout_seconds") or 1),
+            max_memory_mb=payload.get("max_memory_mb"),
+            started_at=started_at,
+        )
 
         max_source_bytes: int = int(payload.get("max_source_bytes") or 65_536)
         max_output_bytes: int = int(payload.get("max_output_bytes") or 1_048_576)

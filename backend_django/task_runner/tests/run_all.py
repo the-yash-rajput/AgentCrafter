@@ -36,7 +36,7 @@ from task_runner.tests.attack_cases._framework import (  # noqa: E402
 )
 
 _VERBOSE = os.environ.get("VERBOSE") == "1"
-_MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "4"))
+_MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "2"))
 _DANGEROUS = os.environ.get("RUN_DANGEROUS_TESTS") == "1"
 
 

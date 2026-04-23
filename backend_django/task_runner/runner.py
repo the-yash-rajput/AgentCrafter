@@ -189,6 +189,10 @@ class PythonTaskRunner:
         try:
             return result_queue.get(timeout=1)
         except queue.Empty:
+            if process.exitcode == 137:
+                raise PythonTaskError(
+                    "Python task killed by sandbox watchdog (memory or wall-clock budget exceeded)"
+                )
             if process.exitcode not in (0, None):
                 raise PythonTaskError(
                     f"Python task runner exited unexpectedly with code {process.exitcode}"
