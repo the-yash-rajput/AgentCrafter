@@ -22,6 +22,7 @@ class RunResponseSerializer(serializers.Serializer):
     session_id = serializers.IntegerField(allow_null=True)
     # status is a RunStatus enum on the SQLAlchemy model; .value gives "success" etc.
     status = serializers.SerializerMethodField()
+    message = serializers.CharField(allow_null=True)
     input_data = serializers.DictField()
     output_data = serializers.DictField()
     conversation_turn = serializers.JSONField()

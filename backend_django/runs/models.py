@@ -58,6 +58,7 @@ class Run(models.Model):
     conversation_turn = models.JSONField(default=list)
     # state_snapshots is the list of per-node states used by the /stream endpoint
     state_snapshots = models.JSONField(default=list)
+    message = models.TextField(null=True, blank=True)
     error = models.TextField(null=True, blank=True)
     checkpoint_thread_id = models.UUIDField(null=True, blank=True, db_index=True)
     resumed_from_run = models.ForeignKey(

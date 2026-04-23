@@ -202,7 +202,8 @@ class SessionResponse(BaseModel):
 
 
 class SessionRunCreate(BaseModel):
-    input_data: JSONMapping = Field(default_factory=dict)
+    message: str = Field(..., min_length=1)
+    metadata: JSONMapping = Field(default_factory=dict)
 
 
 # ─── Run Schemas ──────────────────────────────────────────────────────────────
@@ -213,6 +214,7 @@ class RunResponse(BaseModel):
     version_id: Optional[int]
     session_id: Optional[int]
     status: RunStatus
+    message: Optional[str]
     input_data: JSONMapping
     output_data: JSONMapping
     conversation_turn: Any

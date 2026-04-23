@@ -16,4 +16,5 @@ class SessionResponseSerializer(serializers.Serializer):
 
 class SessionRunCreateSerializer(serializers.Serializer):
     """Validates the request body for POST .../sessions/{id}/run."""
-    input_data = serializers.DictField(required=False, default=dict)
+    message = serializers.CharField(required=True, allow_blank=False)
+    metadata = serializers.DictField(required=False, default=dict)

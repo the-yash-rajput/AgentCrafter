@@ -30,6 +30,7 @@ class Run(Base):
     output_data = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     conversation_turn = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
     state_snapshots = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    message = Column(Text, nullable=True)
     error = Column(Text, nullable=True)
     checkpoint_thread_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     resumed_from_run_id = Column(BigInteger, ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)

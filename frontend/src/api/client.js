@@ -44,8 +44,8 @@ export const forkVersion = (agentId, versionId) => api.post(`/agents/${agentId}/
 // Sessions
 export const createSession = (agentId, versionId) => api.post(`/agents/${agentId}/versions/${versionId}/sessions`).then(r => r.data)
 export const getSession = (agentId, versionId, sessionId) => api.get(`/agents/${agentId}/versions/${versionId}/sessions/${sessionId}`).then(r => r.data)
-export const runInSession = (agentId, versionId, sessionId, inputData) =>
-  api.post(`/agents/${agentId}/versions/${versionId}/sessions/${sessionId}/run`, { input_data: inputData }).then(r => r.data)
+export const runInSession = (agentId, versionId, sessionId, { message, metadata = {} }) =>
+  api.post(`/agents/${agentId}/versions/${versionId}/sessions/${sessionId}/run`, { message, metadata }).then(r => r.data)
 
 // Runs
 export const getRun = (runId) => api.get(`/runs/${runId}`).then(r => r.data)
