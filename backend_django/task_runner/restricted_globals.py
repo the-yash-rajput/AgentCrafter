@@ -7,6 +7,7 @@ import random
 import re
 import statistics
 import string
+import types
 import uuid
 from collections import Counter
 from decimal import Decimal
@@ -62,6 +63,18 @@ _INPLACE_OPERATORS = {
     "^=": operator.xor,
 }
 
+_string_constants = types.SimpleNamespace(
+    ascii_letters=string.ascii_letters,
+    ascii_lowercase=string.ascii_lowercase,
+    ascii_uppercase=string.ascii_uppercase,
+    digits=string.digits,
+    hexdigits=string.hexdigits,
+    octdigits=string.octdigits,
+    punctuation=string.punctuation,
+    printable=string.printable,
+    whitespace=string.whitespace,
+)
+
 _SAFE_HELPERS = {
     "Counter": Counter,
     "Decimal": Decimal,
@@ -72,7 +85,7 @@ _SAFE_HELPERS = {
     "random": random,
     "re": re,
     "statistics": statistics,
-    "string": string,
+    "string": _string_constants,
     "time": datetime_module.time,
     "timedelta": datetime_module.timedelta,
     "uuid4": uuid.uuid4,
