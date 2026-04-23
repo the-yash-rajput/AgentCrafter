@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Play, Database, Download, CheckCircle, AlertCircle, ChevronDown, Sparkles, Undo2, GitBranch } from 'lucide-react'
 import { validateAgent, exportAgent, getVersions, forkVersion, createSession } from '../../api/client'
-import { useGraphStore } from '../../hooks/useGraphStore'
 import toast from 'react-hot-toast'
 
 export const TopBar = ({
@@ -16,7 +15,6 @@ export const TopBar = ({
   isRearranging = false,
 }) => {
   const navigate = useNavigate()
-  const { setAgent } = useGraphStore()
   const [validation, setValidation] = useState(null)
   const [versions, setVersions] = useState([])
   const [showVersionMenu, setShowVersionMenu] = useState(false)
@@ -118,12 +116,13 @@ export const TopBar = ({
       {/* Agent name */}
       <div className="flex items-center gap-2">
         <div className="w-2 h-2 rounded-full" style={{ background: statusColors[agent?.status] || '#64748b' }} />
-        <input
-          value={agent?.name || ''}
-          onChange={(e) => setAgent({ ...agent, name: e.target.value })}
-          className="text-sm font-semibold bg-transparent outline-none border-b border-transparent hover:border-slate-600 text-white"
+        <div
+          className="text-sm font-semibold text-white truncate"
           style={{ minWidth: '120px', maxWidth: '240px' }}
-        />
+          title={agent?.name || `Agent ${agent?.id ?? ''}`.trim()}
+        >
+          {agent?.name || `Agent ${agent?.id ?? ''}`.trim()}
+        </div>
         {isDirty && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>●</span>}
       </div>
 
