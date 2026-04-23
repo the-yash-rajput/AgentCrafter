@@ -4,7 +4,7 @@ from task_runner.errors import (
     PythonTaskTimeoutError,
 )
 from task_runner.models import PythonTaskConfig, PythonTaskResult
-from task_runner.python_task import PythonTaskRunner
+from task_runner.runner import PythonTaskRunner
 
 __all__ = [
     "PythonTaskConfig",
