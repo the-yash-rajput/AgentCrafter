@@ -3,6 +3,76 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Send, Square } from 'lucide-react'
 import { getAgent, getSession, runInSession, getRun, resumeRun, pauseRun } from '../../api/client'
 
+const normalizeMessageContent = (content) => {
+  if (typeof content === 'string') return content
+  if (content == null) return ''
+
+  try {
+    return JSON.stringify(content)
+  } catch {
+    return String(content)
+  }
+}
+
+const normalizeChatMessages = (history) => {
+  if (!Array.isArray(history)) return []
+
+  return history
+    .filter(message => message && typeof message === 'object')
+    .map(message => ({
+      role: message.role,
+      content: normalizeMessageContent(message.content).trim(),
+    }))
+    .filter(message => ['user', 'assistant', 'system'].includes(message.role) && message.content)
+}
+
+const areSameMessage = (left, right) => left?.role === right?.role && left?.content === right?.content
+
+const mergeChatMessages = (baseHistory, additionalHistory = []) => {
+  const base = normalizeChatMessages(baseHistory)
+  const additional = normalizeChatMessages(additionalHistory)
+
+  if (base.length === 0) return additional
+  if (additional.length === 0) return base
+
+  const suffixStart = base.length - additional.length
+  if (
+    suffixStart >= 0 &&
+    additional.every((message, index) => areSameMessage(base[suffixStart + index], message))
+  ) {
+    return base
+  }
+
+  for (let overlap = Math.min(base.length, additional.length); overlap > 0; overlap -= 1) {
+    const matches = additional
+      .slice(0, overlap)
+      .every((message, index) => areSameMessage(base[base.length - overlap + index], message))
+
+    if (matches) {
+      return [...base, ...additional.slice(overlap)]
+    }
+  }
+
+  return [...base, ...additional]
+}
+
+const loadCompletedMessages = async ({
+  agentId,
+  versionId,
+  sessionId,
+  completedRun,
+  fallbackHistory,
+}) => {
+  const runTurn = normalizeChatMessages(completedRun?.conversation_turn)
+
+  try {
+    const updatedSession = await getSession(agentId, versionId, sessionId)
+    return mergeChatMessages(updatedSession?.conversation_history, runTurn)
+  } catch {
+    return mergeChatMessages(fallbackHistory, runTurn)
+  }
+}
+
 const pollRun = async (runId, signal, maxAttempts = 60, intervalMs = 1000) => {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise(resolve => setTimeout(resolve, intervalMs))
@@ -118,12 +188,17 @@ export const ChatPage = () => {
   const [versionNumber, setVersionNumber] = useState(null)
   const [currentRunId, setCurrentRunId] = useState(null)
   const messagesEndRef = useRef(null)
+  const messagesRef = useRef([])
   const textareaRef = useRef(null)
   const abortControllerRef = useRef(null)
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   useEffect(() => {
     scrollToBottom()
@@ -139,12 +214,7 @@ export const ChatPage = () => {
         setVersionNumber(session.version_id)
         if (agent?.name) setAgentName(agent.name)
 
-        const history = session.conversation_history || []
-        const msgs = history.map(msg => ({
-          role: msg.role,
-          content: msg.content,
-        }))
-        setMessages(msgs)
+        setMessages(normalizeChatMessages(session.conversation_history))
       } catch {
         setMessages([])
       }
@@ -200,9 +270,14 @@ export const ChatPage = () => {
           error: true,
         }])
       } else {
-        const updatedSession = await getSession(agentId, versionId, sessionId)
-        const history = updatedSession.conversation_history || []
-        setMessages(history.map(msg => ({ role: msg.role, content: msg.content })))
+        const mergedMessages = await loadCompletedMessages({
+          agentId,
+          versionId,
+          sessionId,
+          completedRun,
+          fallbackHistory: messagesRef.current,
+        })
+        setMessages(mergedMessages)
       }
     } catch (e) {
       setMessages(prev => [...prev, {
@@ -258,9 +333,14 @@ export const ChatPage = () => {
           error: true,
         }])
       } else {
-        const updatedSession = await getSession(agentId, versionId, sessionId)
-        const history = updatedSession.conversation_history || []
-        setMessages(history.map(msg => ({ role: msg.role, content: msg.content })))
+        const mergedMessages = await loadCompletedMessages({
+          agentId,
+          versionId,
+          sessionId,
+          completedRun,
+          fallbackHistory: messagesRef.current,
+        })
+        setMessages(mergedMessages)
       }
     } catch (e) {
       setMessages(prev => [...prev, {
