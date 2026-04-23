@@ -1,0 +1,861 @@
+{
+  "info": {
+    "_postman_id": "d04cd72e-bd89-4b1e-98b4-ae6e5f2909c5",
+    "name": "AgentCrafter API",
+    "description": "Importable Postman collection generated from the Django API surface in backend_django. Routes were analyzed from config/urls.py plus the agents, runs, and sessions apps.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health & Utility",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "Simple service health endpoint. This route is outside the /api prefix."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Node Definitions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/node-definitions",
+            "description": "Returns the available node types, subtypes, labels, descriptions, and default_config values."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Langfuse Prompts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/langfuse/prompts",
+            "description": "Lists available Langfuse prompt names and reports whether Langfuse is configured."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Agents",
+      "item": [
+        {
+          "name": "List Agents",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (Array.isArray(data) && data.length > 0) {",
+                  "  pm.collectionVariables.set('agentId', String(data[0].id));",
+                  "  const firstVersion = Array.isArray(data[0].versions) ? data[0].versions[0] : null;",
+                  "  if (firstVersion && firstVersion.id) {",
+                  "    pm.collectionVariables.set('versionId', String(firstVersion.id));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents?limit={{limit}}&offset={{offset}}",
+            "description": "Lists agents with nested version summaries."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Agent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('agentId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Demo Agent\",\n  \"description\": \"Created from the generated Postman collection\",\n  \"state_schema\": {\n    \"input\": \"string\",\n    \"result\": \"string\"\n  },\n  \"entry_node\": \"start\",\n  \"exit_nodes\": [\n    \"finish\"\n  ],\n  \"metadata\": {\n    \"team\": \"platform\",\n    \"source\": \"postman\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/agents",
+            "description": "Creates a new agent. The response sets the collection variable agentId."
+          },
+          "response": []
+        },
+        {
+          "name": "Import Agent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('agentId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schema_version\": 1,\n  \"agent\": {\n    \"name\": \"Imported Demo Agent\",\n    \"description\": \"Example import payload\"\n  },\n  \"version\": {\n    \"version_number\": 1,\n    \"entry_node\": \"start\",\n    \"exit_nodes\": [\n      \"start\"\n    ],\n    \"state_schema\": {\n      \"input\": \"string\",\n      \"result\": \"string\"\n    }\n  },\n  \"nodes\": [\n    {\n      \"name\": \"start\",\n      \"type\": \"functional\",\n      \"subtype\": \"python_inline\",\n      \"config\": {\n        \"node_type\": \"functional\",\n        \"function_type\": \"python_inline\",\n        \"python_inline\": {\n          \"code\": \"def run(state):\\n    return state\"\n        },\n        \"agent_call\": {\n          \"target_agent_id\": \"\",\n          \"target_agent_name\": \"\",\n          \"input_mode\": \"entire_state\",\n          \"input_key\": \"\",\n          \"input_template\": \"{\\n  \\\"input\\\": \\\"{{input}}\\\"\\n}\",\n          \"output_mode\": \"merge_state\",\n          \"output_key\": \"agent_result\",\n          \"include_run_metadata\": true\n        }\n      },\n      \"position_x\": 0,\n      \"position_y\": 0\n    }\n  ],\n  \"edges\": []\n}"
+            },
+            "url": "{{baseUrl}}/api/agents/import",
+            "description": "Imports an agent graph using the backend export/import schema."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Agent",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents/{{agentId}}",
+            "description": "Returns an agent with its nodes and edges."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Agent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('agentId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Demo Agent Updated\",\n  \"description\": \"Updated through Postman\",\n  \"status\": \"active\",\n  \"state_schema\": {\n    \"input\": \"string\",\n    \"result\": \"string\",\n    \"approved\": \"boolean\"\n  },\n  \"entry_node\": \"start\",\n  \"exit_nodes\": [\n    \"finish\"\n  ],\n  \"metadata\": {\n    \"team\": \"platform\",\n    \"updated_by\": \"postman\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/agents/{{agentId}}",
+            "description": "Updates any mutable agent fields."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Agent",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents/{{agentId}}",
+            "description": "Deletes the selected agent."
+          },
+          "response": []
+        },
+        {
+          "name": "Duplicate Agent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('agentId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/duplicate",
+            "description": "Clones an existing agent."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Versions",
+      "item": [
+        {
+          "name": "List Versions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (Array.isArray(data) && data.length > 0 && data[0].id) {",
+                  "  pm.collectionVariables.set('versionId', String(data[0].id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/versions",
+            "description": "Lists all versions for the selected agent."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Version",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('versionId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/versions/{{versionId}}",
+            "description": "Returns a specific version with its graph."
+          },
+          "response": []
+        },
+        {
+          "name": "Patch Version State Schema",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('versionId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"state_schema\": {\n    \"input\": \"string\",\n    \"messages\": \"array\",\n    \"result\": \"string\",\n    \"confidence\": \"number\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/versions/{{versionId}}",
+            "description": "Updates only the version state_schema field. This field is required."
+          },
+          "response": []
+        },
+        {
+          "name": "Fork Version",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('versionId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/versions/{{versionId}}/fork",
+            "description": "Creates a new version derived from the selected version."
+          },
+          "response": []
+        },
+        {
+          "name": "Export Version",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/versions/{{versionId}}/export",
+            "description": "Exports the agent/version graph in the portable import schema."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Nodes",
+      "item": [
+        {
+          "name": "Create Agent Node",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('nodeId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"start\",\n  \"type\": \"functional\",\n  \"subtype\": \"python_inline\",\n  \"config\": {\n    \"node_type\": \"functional\",\n    \"function_type\": \"python_inline\",\n    \"python_inline\": {\n      \"code\": \"def run(state):\\n    return state\"\n    },\n    \"agent_call\": {\n      \"target_agent_id\": \"\",\n      \"target_agent_name\": \"\",\n      \"input_mode\": \"entire_state\",\n      \"input_key\": \"\",\n      \"input_template\": \"{\\n  \\\"input\\\": \\\"{{input}}\\\"\\n}\",\n      \"output_mode\": \"merge_state\",\n      \"output_key\": \"agent_result\",\n      \"include_run_metadata\": true\n    }\n  },\n  \"position_x\": 160,\n  \"position_y\": 120\n}"
+            },
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/nodes",
+            "description": "Creates a node against the current working graph for the agent."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Version Node",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('nodeId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"start\",\n  \"type\": \"functional\",\n  \"subtype\": \"python_inline\",\n  \"config\": {\n    \"node_type\": \"functional\",\n    \"function_type\": \"python_inline\",\n    \"python_inline\": {\n      \"code\": \"def run(state):\\n    return state\"\n    },\n    \"agent_call\": {\n      \"target_agent_id\": \"\",\n      \"target_agent_name\": \"\",\n      \"input_mode\": \"entire_state\",\n      \"input_key\": \"\",\n      \"input_template\": \"{\\n  \\\"input\\\": \\\"{{input}}\\\"\\n}\",\n      \"output_mode\": \"merge_state\",\n      \"output_key\": \"agent_result\",\n      \"include_run_metadata\": true\n    }\n  },\n  \"position_x\": 160,\n  \"position_y\": 120\n}"
+            },
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/versions/{{versionId}}/nodes",
+            "description": "Creates a node directly on a specific version."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Node",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('nodeId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"start-updated\",\n  \"config\": {\n    \"node_type\": \"functional\",\n    \"function_type\": \"python_inline\",\n    \"python_inline\": {\n      \"code\": \"def run(state):\\n    state['result'] = state.get('input')\\n    return state\"\n    }\n  },\n  \"position_x\": 220,\n  \"position_y\": 160\n}"
+            },
+            "url": "{{baseUrl}}/api/nodes/{{nodeId}}",
+            "description": "Updates a node by id."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Node",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/nodes/{{nodeId}}",
+            "description": "Deletes a node by id."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Edges",
+      "item": [
+        {
+          "name": "Create Agent Edge",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('edgeId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_node_id\": {{nodeId}},\n  \"target_node_id\": {{nodeId}},\n  \"edge_type\": \"direct\",\n  \"condition_config\": {},\n  \"label\": \"self-loop\"\n}"
+            },
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/edges",
+            "description": "Creates an edge on the current working graph for the agent."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Version Edge",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('edgeId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_node_id\": {{nodeId}},\n  \"target_node_id\": {{nodeId}},\n  \"edge_type\": \"direct\",\n  \"condition_config\": {},\n  \"label\": \"self-loop\"\n}"
+            },
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/versions/{{versionId}}/edges",
+            "description": "Creates an edge directly on a specific version."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Edge",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('edgeId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_node_id\": {{nodeId}},\n  \"target_node_id\": {{nodeId}},\n  \"edge_type\": \"conditional\",\n  \"condition_config\": {\n    \"condition_type\": \"jsonpath\",\n    \"expression\": \"$.approved == true\"\n  },\n  \"label\": \"approved\"\n}"
+            },
+            "url": "{{baseUrl}}/api/edges/{{edgeId}}",
+            "description": "Updates an edge by id."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Edge",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/edges/{{edgeId}}",
+            "description": "Deletes an edge by id."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Sessions",
+      "item": [
+        {
+          "name": "List Sessions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (Array.isArray(data) && data.length > 0 && data[0].id) {",
+                  "  pm.collectionVariables.set('sessionId', String(data[0].id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/versions/{{versionId}}/sessions",
+            "description": "Lists chat sessions for an agent version."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('sessionId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/versions/{{versionId}}/sessions",
+            "description": "Creates a new session for the selected version."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('sessionId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/versions/{{versionId}}/sessions/{{sessionId}}",
+            "description": "Returns a specific session and its conversation_history."
+          },
+          "response": []
+        },
+        {
+          "name": "Run In Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('runId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"input_data\": {\n    \"input\": \"Hello from Postman\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/versions/{{versionId}}/sessions/{{sessionId}}/run",
+            "description": "Starts a background run for the selected session. The response sets runId."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Runs",
+      "item": [
+        {
+          "name": "Validate Agent",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/validate",
+            "description": "Runs pre-execution validation against the selected agent."
+          },
+          "response": []
+        },
+        {
+          "name": "List Runs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (Array.isArray(data) && data.length > 0 && data[0].id) {",
+                  "  pm.collectionVariables.set('runId', String(data[0].id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/agents/{{agentId}}/runs?limit={{limit}}&offset={{offset}}",
+            "description": "Lists runs for the selected agent."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Run",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('runId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/runs/{{runId}}",
+            "description": "Returns the selected run record, including output, snapshots, and interruption metadata."
+          },
+          "response": []
+        },
+        {
+          "name": "Resume Run",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('runId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"human_response\": \"Approve and continue.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/runs/{{runId}}/resume",
+            "description": "Resumes an interrupted run. human_response is optional for HITL flows."
+          },
+          "response": []
+        },
+        {
+          "name": "Pause Run",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('runId', String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/runs/{{runId}}/pause",
+            "description": "Requests a running background run to pause between nodes."
+          },
+          "response": []
+        },
+        {
+          "name": "Stream Run SSE",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "url": "{{baseUrl}}/api/runs/{{runId}}/stream",
+            "description": "Server-Sent Events endpoint. Replays saved state snapshots and emits a final status frame."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "agentId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "versionId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "nodeId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "edgeId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "sessionId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "runId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "limit",
+      "value": "50",
+      "type": "string"
+    },
+    {
+      "key": "offset",
+      "value": "0",
+      "type": "string"
+    }
+  ]
+}
