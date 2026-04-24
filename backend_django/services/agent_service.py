@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session, selectinload, noload
 from models import Agent, AgentStatus, Edge, Node
 from models.agent_version import AgentVersion
 from schemas.schemas import AgentCreate, AgentUpdate
-from services.agent_exit_nodes import normalize_exit_nodes
 from services.exceptions import NotFoundError, ValidationError
 
 
@@ -15,14 +14,10 @@ class AgentService:
         self.db = db
 
     def create_agent(self, payload: AgentCreate) -> Agent:
-        data = payload.model_dump(by_alias=False)
+        data = payload.model_dump()
         agent = Agent(
             name=data["name"],
             description=data.get("description"),
-            state_schema=data.get("state_schema") or {},
-            entry_node=data.get("entry_node"),
-            exit_nodes=data.get("exit_nodes") or [],
-            metadata_=data.get("metadata_") or {},
         )
         self.db.add(agent)
         self._commit_or_raise("Invalid agent payload")
@@ -62,18 +57,8 @@ class AgentService:
 
     def update_agent(self, agent_id: int, payload: AgentUpdate) -> Agent:
         agent = self.get_agent(agent_id)
-        update_data = payload.model_dump(exclude_unset=True)
-
-        if "exit_nodes" in update_data:
-            update_data["exit_nodes"] = normalize_exit_nodes(update_data["exit_nodes"])
-            self._validate_exit_nodes(agent_id, update_data["exit_nodes"])
-
-        for key, value in update_data.items():
-            if key == "metadata_":
-                setattr(agent, "metadata_", value)
-            else:
-                setattr(agent, key, value)
-
+        for key, value in payload.model_dump(exclude_unset=True).items():
+            setattr(agent, key, value)
         self._commit_or_raise("Invalid agent update")
         self.db.refresh(agent)
         return agent
@@ -95,10 +80,6 @@ class AgentService:
             name=f"{source_agent.name} (copy)",
             description=source_agent.description,
             status=AgentStatus.draft,
-            state_schema={},
-            entry_node=None,
-            exit_nodes=[],
-            metadata_=dict(source_agent.metadata_ or {}),
         )
         self.db.add(new_agent)
         self.db.flush()
@@ -111,7 +92,6 @@ class AgentService:
                 entry_node=source_version.entry_node,
                 exit_nodes=list(source_version.exit_nodes or []),
                 state_schema=dict(source_version.state_schema or {}),
-                metadata_={},
             )
             self.db.add(new_version)
             self.db.flush()
@@ -149,33 +129,11 @@ class AgentService:
             self.db.add(AgentVersion(
                 agent_id=new_agent.id,
                 version_number=1,
-                entry_node=None,
-                exit_nodes=[],
-                state_schema={},
-                metadata_={},
             ))
 
         self._commit_or_raise("Failed to duplicate agent")
         self.db.refresh(new_agent)
         return new_agent
-
-    def _validate_exit_nodes(self, agent_id: int, exit_nodes: list[str]) -> None:
-        node_rows = self.db.query(Node.id, Node.name).filter(Node.agent_id == agent_id).all()
-        name_to_id = {name: node_id for node_id, name in node_rows}
-        missing_nodes = [name for name in exit_nodes if name not in name_to_id]
-        if missing_nodes:
-            raise ValidationError(f"Exit nodes do not exist: {', '.join(missing_nodes)}")
-
-        outgoing_node_ids = {
-            source_node_id
-            for (source_node_id,) in self.db.query(Edge.source_node_id)
-            .filter(Edge.agent_id == agent_id)
-            .distinct()
-            .all()
-        }
-        non_leaf_exit_nodes = [name for name in exit_nodes if name_to_id[name] in outgoing_node_ids]
-        if non_leaf_exit_nodes:
-            raise ValidationError(f"Exit nodes must be leaf nodes: {', '.join(non_leaf_exit_nodes)}")
 
     def _commit_or_raise(self, prefix: str) -> None:
         try:

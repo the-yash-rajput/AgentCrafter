@@ -8,9 +8,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
-    text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from db.base import Base
@@ -24,10 +22,6 @@ class Agent(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     status = Column(SAEnum(AgentStatus, name="agent_status"), default=AgentStatus.draft, nullable=False)
-    state_schema = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
-    entry_node = Column(String(255), nullable=True)
-    exit_nodes = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
-    metadata_ = Column("metadata", JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     created_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now(), onupdate=func.now())
 

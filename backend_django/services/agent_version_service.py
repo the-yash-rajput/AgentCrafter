@@ -53,10 +53,6 @@ class AgentVersionService:
         version = AgentVersion(
             agent_id=agent.id,
             version_number=1,
-            entry_node=agent.entry_node,
-            exit_nodes=list(agent.exit_nodes or []),
-            state_schema=dict(agent.state_schema or {}),
-            metadata_=dict(agent.metadata_ or {}),
         )
         self.db.add(version)
         try:
@@ -68,18 +64,43 @@ class AgentVersionService:
         self.db.refresh(version)
         return version
 
-    def update_state_schema(self, version_id: int, state_schema: dict) -> AgentVersion:
+    def patch_version(self, version_id: int, **fields) -> AgentVersion:
         from sqlalchemy.orm.attributes import flag_modified
-        version = self.get_version(version_id)
-        version.state_schema = state_schema
-        flag_modified(version, "state_schema")
+        version = self.get_version(version_id, include_graph=True)
+
+        if "state_schema" in fields:
+            version.state_schema = fields["state_schema"]
+            flag_modified(version, "state_schema")
+
+        if "entry_node" in fields:
+            version.entry_node = fields["entry_node"]
+
+        if "exit_nodes" in fields:
+            from services.agent_exit_nodes import normalize_exit_nodes
+            exit_nodes = normalize_exit_nodes(fields["exit_nodes"])
+            self._validate_exit_nodes(version, exit_nodes)
+            version.exit_nodes = exit_nodes
+            flag_modified(version, "exit_nodes")
+
         try:
             self.db.commit()
         except Exception as exc:
             self.db.rollback()
-            raise ValidationError(f"Failed to update state schema: {exc}") from exc
+            raise ValidationError(f"Failed to patch version: {exc}") from exc
         self.db.refresh(version)
         return version
+
+    def _validate_exit_nodes(self, version: AgentVersion, exit_nodes: list[str]) -> None:
+        node_names = {n.name for n in version.nodes}
+        missing = [name for name in exit_nodes if name not in node_names]
+        if missing:
+            raise ValidationError(f"Exit nodes do not exist: {', '.join(missing)}")
+
+        outgoing = {e.source_node_id for e in version.edges}
+        node_id_by_name = {n.name: n.id for n in version.nodes}
+        non_leaf = [name for name in exit_nodes if node_id_by_name.get(name) in outgoing]
+        if non_leaf:
+            raise ValidationError(f"Exit nodes must be leaf nodes: {', '.join(non_leaf)}")
 
     def fork_version(self, from_version_id: int) -> AgentVersion:
         source = self.get_version(from_version_id, include_graph=True)
@@ -95,7 +116,6 @@ class AgentVersionService:
             entry_node=source.entry_node,
             exit_nodes=list(source.exit_nodes or []),
             state_schema=dict(source.state_schema or {}),
-            metadata_=dict(source.metadata_ or {}),
             created_from_version_id=from_version_id,
         )
         self.db.add(new_version)

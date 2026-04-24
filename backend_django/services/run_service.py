@@ -39,14 +39,19 @@ class RunService:
         if not session:
             raise NotFoundError("Session not found")
 
-        agent = self._get_agent_or_404(agent_id)
+        self._get_agent_or_404(agent_id)
         runner = GraphRunner(self.db)
         validation = runner.validate_graph(agent_id)
         if not validation["valid"]:
             raise ValidationError({"errors": validation["errors"]})
 
+        from models.agent_version import AgentVersion
+        version = self.db.query(AgentVersion).filter(AgentVersion.id == version_id).first()
+        if not version:
+            raise NotFoundError("Version not found")
+
         conversation_history = normalize_conversation_history(session.conversation_history)
-        effective_input = apply_state_schema_defaults(payload.metadata, agent.state_schema)
+        effective_input = apply_state_schema_defaults(payload.metadata, version.state_schema)
 
         checkpoint_thread_id = uuid.uuid4()
         repo = GraphRuntimeRepository(self.db)

@@ -38,7 +38,7 @@ def get_checkpointer():
 
         db_url = os.getenv(
             "DATABASE_URL",
-            "postgresql://langgraph:langgraph_secret@localhost:5733/ldb",
+            "postgresql://langgraph:langgraph_secret@localhost:5733/lbdnew",
         )
         # autocommit=True is required by PostgresSaver
         conn = psycopg.connect(db_url, autocommit=True)

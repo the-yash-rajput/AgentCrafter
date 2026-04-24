@@ -63,10 +63,6 @@ class AgentListCreateView(APIView):
         payload = AgentCreate(
             name=d["name"],
             description=d.get("description"),
-            state_schema=d.get("state_schema", {}),
-            entry_node=d.get("entry_node"),
-            exit_nodes=d.get("exit_nodes", []),
-            metadata=d.get("metadata", {}),
         )
         with managed_db() as db:
             agent = AgentService(db).create_agent(payload)
@@ -101,10 +97,7 @@ class AgentDetailView(APIView):
         ser = AgentUpdateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         d = ser.validated_data
-        kwargs = {k: v for k, v in d.items() if k in request.data}
-        if "metadata" in kwargs:
-            kwargs["metadata_"] = kwargs.pop("metadata")
-        payload = AgentUpdate(**kwargs)
+        payload = AgentUpdate(**{k: v for k, v in d.items() if k in request.data})
         with managed_db() as db:
             agent = AgentService(db).update_agent(agent_id, payload)
         return Response(AgentResponseSerializer(agent).data)
@@ -156,11 +149,11 @@ class VersionDetailView(APIView):
         from services.agent_version_service import AgentVersionService
         ser = VersionPatchSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        state_schema = ser.validated_data.get("state_schema")
-        if state_schema is None:
-            return Response({"detail": "state_schema is required"}, status=status.HTTP_400_BAD_REQUEST)
+        d = {k: v for k, v in ser.validated_data.items() if k in request.data}
+        if not d:
+            return Response({"detail": "At least one of state_schema, entry_node, or exit_nodes is required"}, status=status.HTTP_400_BAD_REQUEST)
         with managed_db() as db:
-            version = AgentVersionService(db).update_state_schema(version_id, state_schema)
+            version = AgentVersionService(db).patch_version(version_id, **d)
         return Response(AgentVersionWithGraphSerializer(version).data)
 
 

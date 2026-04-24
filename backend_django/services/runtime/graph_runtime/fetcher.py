@@ -30,45 +30,8 @@ class GraphRuntimeRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def fetch_for_execution(self, agent_id: int, version_id: int | None = None) -> GraphFetchResult:
-        if version_id is not None:
-            return self._fetch_by_version(version_id)
-
-        agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
-        if not agent:
-            raise NotFoundError(f"Agent {agent_id} not found")
-
-        # Fall back to latest version
-        version = (
-            self.db.query(AgentVersion)
-            .filter(AgentVersion.agent_id == agent_id)
-            .order_by(AgentVersion.version_number.desc())
-            .first()
-        )
-        if version:
-            return self._fetch_by_version(version.id)
-
-        nodes = (
-            self.db.query(Node)
-            .options(load_only(Node.id, Node.name, Node.type, Node.subtype, Node.config))
-            .filter(Node.agent_id == agent_id)
-            .all()
-        )
-        edges = (
-            self.db.query(Edge)
-            .options(
-                load_only(
-                    Edge.source_node_id,
-                    Edge.target_node_id,
-                    Edge.edge_type,
-                    Edge.condition_config,
-                    Edge.label,
-                )
-            )
-            .filter(Edge.agent_id == agent_id)
-            .all()
-        )
-        return GraphFetchResult(agent=agent, nodes=nodes, edges=edges)
+    def fetch_for_execution(self, agent_id: int, version_id: int) -> GraphFetchResult:
+        return self._fetch_by_version(version_id)
 
     def _fetch_by_version(self, version_id: int) -> GraphFetchResult:
         version = self.db.query(AgentVersion).filter(AgentVersion.id == version_id).first()
@@ -120,10 +83,7 @@ class GraphRuntimeRepository:
             )
             return GraphFetchResult(agent=version, nodes=nodes, edges=edges)
 
-        agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
-        if not agent:
-            return None
-
+        # No version_id: resolve to latest version for this agent
         version = (
             self.db.query(AgentVersion)
             .filter(AgentVersion.agent_id == agent_id)
@@ -132,20 +92,7 @@ class GraphRuntimeRepository:
         )
         if version:
             return self.fetch_for_validation(agent_id, version_id=version.id)
-
-        nodes = (
-            self.db.query(Node)
-            .options(load_only(Node.id, Node.name, Node.type, Node.subtype, Node.config))
-            .filter(Node.agent_id == agent_id)
-            .all()
-        )
-        edges = (
-            self.db.query(Edge)
-            .options(load_only(Edge.source_node_id, Edge.target_node_id))
-            .filter(Edge.agent_id == agent_id)
-            .all()
-        )
-        return GraphFetchResult(agent=agent, nodes=nodes, edges=edges)
+        return None
 
     def fetch_agent_name_maps(self) -> tuple[dict[int, str], dict[str, int]]:
         target_agents_by_id = {
