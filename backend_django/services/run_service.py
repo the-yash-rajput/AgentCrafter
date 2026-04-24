@@ -46,14 +46,14 @@ class RunService:
             raise ValidationError({"errors": validation["errors"]})
 
         conversation_history = normalize_conversation_history(session.conversation_history)
-        effective_input = apply_state_schema_defaults(payload.input_data, agent.state_schema)
-        persisted_input = dict(payload.input_data or {})
+        effective_input = apply_state_schema_defaults(payload.metadata, agent.state_schema)
 
         checkpoint_thread_id = uuid.uuid4()
         repo = GraphRuntimeRepository(self.db)
         run = repo.create_run(
             agent_id,
-            persisted_input,
+            {},
+            message=payload.message,
             version_id=version_id,
             session_id=session_id,
             checkpoint_thread_id=checkpoint_thread_id,
@@ -87,6 +87,8 @@ class RunService:
 
         runtime_input = dict(effective_input)
         runtime_input[CONVERSATION_HISTORY_KEY] = list(conversation_history)
+        if run.message:
+            runtime_input["message"] = run.message
 
         runner = GraphRunner(self.db)
         try:
@@ -126,17 +128,17 @@ class RunService:
         interrupted_run = repo.get_run_for_resume(run_id)
 
         checkpoint_thread_id = interrupted_run.checkpoint_thread_id
-        persisted_input = dict(interrupted_run.input_data or {})
         new_run = repo.create_run(
             interrupted_run.agent_id,
-            persisted_input,
+            {},
+            message=interrupted_run.message,
             version_id=interrupted_run.version_id,
             session_id=interrupted_run.session_id,
             checkpoint_thread_id=checkpoint_thread_id,
             resumed_from_run_id=run_id,
         )
         # Attach runtime metadata for the background thread
-        new_run._runtime_effective_input = persisted_input
+        new_run._runtime_effective_input = {}
         new_run._runtime_conversation_history = []
         new_run._runtime_resumed_from_run_id = run_id
         new_run._runtime_interrupted_session_id = interrupted_run.session_id

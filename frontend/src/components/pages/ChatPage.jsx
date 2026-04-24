@@ -67,7 +67,14 @@ const loadCompletedMessages = async ({
 
   try {
     const updatedSession = await getSession(agentId, versionId, sessionId)
-    return mergeChatMessages(updatedSession?.conversation_history, runTurn)
+    // If session history is empty (race condition: append_conversation_turn hasn't
+    // committed yet), use the current React state as the base so existing messages
+    // are not lost.
+    const baseHistory =
+      (updatedSession?.conversation_history?.length ?? 0) > 0
+        ? updatedSession.conversation_history
+        : fallbackHistory
+    return mergeChatMessages(baseHistory, runTurn)
   } catch {
     return mergeChatMessages(fallbackHistory, runTurn)
   }
