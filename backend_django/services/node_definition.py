@@ -123,6 +123,8 @@ def _build_default_llm_config(subtype: NodeSubtype) -> JSONMapping:
         "confidence_threshold_enabled": False,
         "confidence_threshold": 0.7,
         "confidence_key": "confidence",
+        "sla_timeout_seconds": None,
+        "timeout_action": "auto_approve",
     }
 
 

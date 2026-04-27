@@ -50,12 +50,22 @@ def _apply_confidence_check(response, *, config: JSONMapping, node_name=None):
         return response
 
     from langgraph.types import interrupt
+    reason = (
+        f"Node '{node_name}' responded with {confidence:.0%} confidence, "
+        f"which is below the required threshold of {threshold:.0%}. "
+        "Human review is required before the run can continue."
+    )
+    sla_timeout_seconds = config.get("sla_timeout_seconds")
+    timeout_action = str(config.get("timeout_action") or "auto_approve")
     human_value = interrupt({
         "interrupt_type": "confidence_check",
         "node_name": node_name,
         "confidence": confidence,
         "threshold": threshold,
         "llm_response": response,
+        "reason": reason,
+        "sla_timeout_seconds": int(sla_timeout_seconds) if sla_timeout_seconds else None,
+        "timeout_action": timeout_action,
     })
     return human_value
 

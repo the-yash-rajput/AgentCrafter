@@ -67,6 +67,8 @@ class Run(models.Model):
     )
     pause_requested = models.BooleanField(default=False)
     interrupt_metadata = models.JSONField(null=True, blank=True, default=None)
+    sla_timeout_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    review_metadata = models.JSONField(null=True, blank=True, default=None)
     started_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 

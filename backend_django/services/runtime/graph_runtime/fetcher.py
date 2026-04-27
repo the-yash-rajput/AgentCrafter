@@ -157,11 +157,13 @@ class GraphRuntimeRepository:
         snapshots: list[dict],
         *,
         interrupt_metadata: dict | None = None,
+        sla_timeout_at=None,
     ) -> None:
         run.status = RunStatus.interrupted
         run.error = error
         run.state_snapshots = snapshots
         run.interrupt_metadata = interrupt_metadata
+        run.sla_timeout_at = sla_timeout_at
         run.completed_at = datetime.utcnow()
         self.db.commit()
 
