@@ -13,7 +13,6 @@ Key mapping decisions:
   - SQLAlchemy BigInteger Identity → Django BigAutoField (set as DEFAULT_AUTO_FIELD)
   - SQLAlchemy SAEnum(PgType) → CharField with TextChoices (avoids PG enum DDL conflicts)
   - SQLAlchemy JSONB → models.JSONField (requires django.contrib.postgres)
-  - metadata_ attribute (SQLAlchemy column alias) → metadata field with db_column="metadata"
   - Composite FK on edges (agent_id + source/target_node_id) → added via RunSQL migration
 """
 from django.db import models
@@ -65,13 +64,6 @@ class Agent(models.Model):
         choices=AgentStatus.choices,
         default=AgentStatus.DRAFT,
     )
-    # JSONB → JSONField. Default values match SQLAlchemy server_defaults.
-    state_schema = models.JSONField(default=dict)
-    entry_node = models.CharField(max_length=255, null=True, blank=True)
-    exit_nodes = models.JSONField(default=list)
-    # SQLAlchemy uses metadata_ as the Python attribute, "metadata" as the DB
-    # column. Here we use the natural name with an explicit db_column alias.
-    metadata = models.JSONField(default=dict, db_column="metadata")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -104,8 +96,6 @@ class AgentVersion(models.Model):
     entry_node = models.CharField(max_length=255, null=True, blank=True)
     exit_nodes = models.JSONField(default=list)
     state_schema = models.JSONField(default=dict)
-    # Same metadata_ / metadata aliasing as Agent above.
-    metadata = models.JSONField(default=dict, db_column="metadata")
     # Self-referential FK tracking which version this was forked from.
     created_from_version = models.ForeignKey(
         "self",

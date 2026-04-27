@@ -845,6 +845,7 @@ const GraphEditorInner = () => {
             panelWidth={configPanelWidth}
             onClosePanel={() => setShowConfigPanel(false)}
             onDuplicateNode={duplicateCanvasNode}
+            versionId={versionId ? Number(versionId) : null}
           />
         )}
       </div>

@@ -84,7 +84,7 @@ ASGI_APPLICATION = "config.asgi.application"
 # data access still goes through SQLAlchemy (see db/session.py).
 _db_url = env(
     "DATABASE_URL",
-    default="postgresql://langgraph:langgraph_secret@localhost:5733/langgraph_builder",
+    default="postgresql://langgraph:langgraph_secret@localhost:5733/lbdnew",
 )
 DATABASES = {
     "default": env.db_url("DATABASE_URL", default=_db_url),

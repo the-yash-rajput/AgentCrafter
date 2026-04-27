@@ -15,17 +15,24 @@ class LangGraphExecutor:
         snapshots: list[dict],
         thread_id: str | None = None,
         resume_command=None,
+        resume: bool = False,
     ) -> GraphRunResult:
         current_state = dict(input_data or {})
-
-        # When a checkpointer is attached, thread_id is required so LangGraph
-        # can store/load the checkpoint.  On resume, LangGraph ignores
-        # current_state and loads the saved checkpoint for this thread_id.
         config = {"configurable": {"thread_id": thread_id}} if thread_id else {}
 
-        # For HITL confidence-check resumes, invoke with Command(resume=...) so
-        # LangGraph reloads the checkpoint and returns the human value from interrupt().
-        invoke_input = resume_command if resume_command is not None else current_state
+        if resume_command is not None:
+            # Confidence-check HITL: pass Command(resume=...) so LangGraph reloads
+            # the checkpoint and returns the human value from interrupt().
+            invoke_input = resume_command
+        elif resume:
+            # Manual-pause resume: LangGraph only reloads a checkpoint when input is
+            # None or a Command instance — a plain dict triggers a fresh run from the
+            # entry node. Pass an empty Command() so the checkpoint is picked up.
+            from langgraph.types import Command
+            invoke_input = Command()
+        else:
+            invoke_input = current_state
+
         result = compiled_graph.graph.invoke(invoke_input, config)
         if isinstance(result, dict):
             current_state = result

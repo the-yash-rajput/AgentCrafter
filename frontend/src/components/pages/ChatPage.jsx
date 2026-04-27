@@ -60,23 +60,15 @@ const loadCompletedMessages = async ({
   agentId,
   versionId,
   sessionId,
-  completedRun,
   fallbackHistory,
 }) => {
-  const runTurn = normalizeChatMessages(completedRun?.conversation_turn)
-
   try {
     const updatedSession = await getSession(agentId, versionId, sessionId)
-    // If session history is empty (race condition: append_conversation_turn hasn't
-    // committed yet), use the current React state as the base so existing messages
-    // are not lost.
-    const baseHistory =
-      (updatedSession?.conversation_history?.length ?? 0) > 0
-        ? updatedSession.conversation_history
-        : fallbackHistory
-    return mergeChatMessages(baseHistory, runTurn)
+    return (updatedSession?.conversation_history?.length ?? 0) > 0
+      ? normalizeChatMessages(updatedSession.conversation_history)
+      : fallbackHistory
   } catch {
-    return mergeChatMessages(fallbackHistory, runTurn)
+    return fallbackHistory
   }
 }
 
@@ -281,7 +273,6 @@ export const ChatPage = () => {
           agentId,
           versionId,
           sessionId,
-          completedRun,
           fallbackHistory: messagesRef.current,
         })
         setMessages(mergedMessages)
@@ -344,7 +335,6 @@ export const ChatPage = () => {
           agentId,
           versionId,
           sessionId,
-          completedRun,
           fallbackHistory: messagesRef.current,
         })
         setMessages(mergedMessages)

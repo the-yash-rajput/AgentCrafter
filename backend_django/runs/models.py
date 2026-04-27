@@ -52,10 +52,6 @@ class Run(models.Model):
         choices=RunStatus.choices,
         default=RunStatus.PENDING,
     )
-    input_data = models.JSONField(default=dict)
-    output_data = models.JSONField(default=dict)
-    # conversation_turn holds the single user+assistant turn for this run
-    conversation_turn = models.JSONField(default=list)
     # state_snapshots is the list of per-node states used by the /stream endpoint
     state_snapshots = models.JSONField(default=list)
     message = models.TextField(null=True, blank=True)

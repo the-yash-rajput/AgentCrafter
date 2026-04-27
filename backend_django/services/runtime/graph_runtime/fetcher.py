@@ -30,45 +30,8 @@ class GraphRuntimeRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def fetch_for_execution(self, agent_id: int, version_id: int | None = None) -> GraphFetchResult:
-        if version_id is not None:
-            return self._fetch_by_version(version_id)
-
-        agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
-        if not agent:
-            raise NotFoundError(f"Agent {agent_id} not found")
-
-        # Fall back to latest version
-        version = (
-            self.db.query(AgentVersion)
-            .filter(AgentVersion.agent_id == agent_id)
-            .order_by(AgentVersion.version_number.desc())
-            .first()
-        )
-        if version:
-            return self._fetch_by_version(version.id)
-
-        nodes = (
-            self.db.query(Node)
-            .options(load_only(Node.id, Node.name, Node.type, Node.subtype, Node.config))
-            .filter(Node.agent_id == agent_id)
-            .all()
-        )
-        edges = (
-            self.db.query(Edge)
-            .options(
-                load_only(
-                    Edge.source_node_id,
-                    Edge.target_node_id,
-                    Edge.edge_type,
-                    Edge.condition_config,
-                    Edge.label,
-                )
-            )
-            .filter(Edge.agent_id == agent_id)
-            .all()
-        )
-        return GraphFetchResult(agent=agent, nodes=nodes, edges=edges)
+    def fetch_for_execution(self, agent_id: int, version_id: int) -> GraphFetchResult:
+        return self._fetch_by_version(version_id)
 
     def _fetch_by_version(self, version_id: int) -> GraphFetchResult:
         version = self.db.query(AgentVersion).filter(AgentVersion.id == version_id).first()
@@ -120,10 +83,7 @@ class GraphRuntimeRepository:
             )
             return GraphFetchResult(agent=version, nodes=nodes, edges=edges)
 
-        agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
-        if not agent:
-            return None
-
+        # No version_id: resolve to latest version for this agent
         version = (
             self.db.query(AgentVersion)
             .filter(AgentVersion.agent_id == agent_id)
@@ -132,20 +92,7 @@ class GraphRuntimeRepository:
         )
         if version:
             return self.fetch_for_validation(agent_id, version_id=version.id)
-
-        nodes = (
-            self.db.query(Node)
-            .options(load_only(Node.id, Node.name, Node.type, Node.subtype, Node.config))
-            .filter(Node.agent_id == agent_id)
-            .all()
-        )
-        edges = (
-            self.db.query(Edge)
-            .options(load_only(Edge.source_node_id, Edge.target_node_id))
-            .filter(Edge.agent_id == agent_id)
-            .all()
-        )
-        return GraphFetchResult(agent=agent, nodes=nodes, edges=edges)
+        return None
 
     def fetch_agent_name_maps(self) -> tuple[dict[int, str], dict[str, int]]:
         target_agents_by_id = {
@@ -158,7 +105,6 @@ class GraphRuntimeRepository:
     def create_run(
         self,
         agent_id: int,
-        input_data: StatePayload,
         *,
         message: str | None = None,
         version_id: int | None = None,
@@ -173,9 +119,6 @@ class GraphRuntimeRepository:
             session_id=session_id,
             status=RunStatus.running,
             message=message,
-            input_data=dict(input_data or {}),
-            output_data={},
-            conversation_turn=[],
             state_snapshots=[],
             checkpoint_thread_id=checkpoint_thread_id,
             resumed_from_run_id=resumed_from_run_id,
@@ -188,14 +131,9 @@ class GraphRuntimeRepository:
     def mark_run_success(
         self,
         run: Run,
-        output_data: StatePayload,
         snapshots: list[dict],
-        *,
-        conversation_turn: list[dict[str, str]] | None = None,
     ) -> None:
         run.status = RunStatus.success
-        run.output_data = output_data
-        run.conversation_turn = list(conversation_turn or [])
         run.state_snapshots = snapshots
         run.completed_at = datetime.utcnow()
         self.db.commit()
@@ -205,12 +143,9 @@ class GraphRuntimeRepository:
         run: Run,
         error: str,
         snapshots: list[dict],
-        *,
-        conversation_turn: list[dict[str, str]] | None = None,
     ) -> None:
         run.status = RunStatus.failed
         run.error = error
-        run.conversation_turn = list(conversation_turn or [])
         run.state_snapshots = snapshots
         run.completed_at = datetime.utcnow()
         self.db.commit()
@@ -221,12 +156,10 @@ class GraphRuntimeRepository:
         error: str,
         snapshots: list[dict],
         *,
-        conversation_turn: list[dict[str, str]] | None = None,
         interrupt_metadata: dict | None = None,
     ) -> None:
         run.status = RunStatus.interrupted
         run.error = error
-        run.conversation_turn = list(conversation_turn or [])
         run.state_snapshots = snapshots
         run.interrupt_metadata = interrupt_metadata
         run.completed_at = datetime.utcnow()

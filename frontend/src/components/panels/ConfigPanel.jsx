@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Trash2, Brain, Zap, ChevronDown, ChevronRight, Flag, LogOut, RadioTower, Copy } from 'lucide-react'
 import { useGraphStore } from '../../hooks/useGraphStore'
-import { updateNode, deleteNode, updateAgent, updateEdge, deleteEdge, getAgents, getLangfusePrompts, getNodeDefinitions } from '../../api/client'
+import { updateNode, deleteNode, updateEdge, deleteEdge, getAgents, getLangfusePrompts, getNodeDefinitions, patchVersion } from '../../api/client'
 import toast from 'react-hot-toast'
 import Editor from '@monaco-editor/react'
 
@@ -965,7 +965,7 @@ const EdgeConfigPanel = ({ edge, onClose }) => {
 
 // ─── Main Config Panel ─────────────────────────────────────────────────────────
 
-export const ConfigPanel = ({ onClosePanel, panelWidth = 320, onDuplicateNode }) => {
+export const ConfigPanel = ({ onClosePanel, panelWidth = 320, onDuplicateNode, versionId }) => {
   const { selectedNode, selectedEdge, clearSelection, agent, edges, updateNodeData, removeNode, setAgent } = useGraphStore()
   const [config, setConfig] = useState({})
   const [name, setName] = useState('')
@@ -1076,8 +1076,8 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320, onDuplicateNode })
 
   const handleSetEntry = async () => {
     try {
-      const updated = await updateAgent(agent.id, { entry_node: nodeName })
-      setAgent(updated)
+      const updated = await patchVersion(agent.id, versionId, { entry_node: nodeName })
+      setAgent({ ...agent, entry_node: updated.entry_node })
       toast.success(`${nodeName} set as entry node`)
     } catch (e) { toast.error(e.response?.data?.detail || 'Failed') }
   }
@@ -1087,8 +1087,8 @@ export const ConfigPanel = ({ onClosePanel, panelWidth = 320, onDuplicateNode })
       const nextExitNodes = isExitNode
         ? exitNodes.filter(exitName => exitName !== nodeName)
         : [...exitNodes, nodeName]
-      const updated = await updateAgent(agent.id, { exit_nodes: nextExitNodes })
-      setAgent(updated)
+      const updated = await patchVersion(agent.id, versionId, { exit_nodes: nextExitNodes })
+      setAgent({ ...agent, exit_nodes: updated.exit_nodes })
       toast.success(isExitNode ? `${nodeName} removed from exit nodes` : `${nodeName} added to exit nodes`)
     } catch (e) { toast.error(e.response?.data?.detail || 'Failed') }
   }

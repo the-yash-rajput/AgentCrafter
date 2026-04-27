@@ -13,10 +13,9 @@ from services.session_history import (
     normalize_conversation_history,
 )
 from services.state_schema import apply_state_schema_defaults
-from services.exceptions import NotFoundError, ServiceError, ValidationError
+from services.exceptions import NotFoundError, ValidationError
 from services.runtime.graph_runner import GraphRunner
 from services.runtime.graph_runtime.fetcher import GraphRuntimeRepository
-from services.session_service import SessionService
 
 
 class RunService:
@@ -39,20 +38,24 @@ class RunService:
         if not session:
             raise NotFoundError("Session not found")
 
-        agent = self._get_agent_or_404(agent_id)
+        self._get_agent_or_404(agent_id)
         runner = GraphRunner(self.db)
         validation = runner.validate_graph(agent_id)
         if not validation["valid"]:
             raise ValidationError({"errors": validation["errors"]})
 
+        from models.agent_version import AgentVersion
+        version = self.db.query(AgentVersion).filter(AgentVersion.id == version_id).first()
+        if not version:
+            raise NotFoundError("Version not found")
+
         conversation_history = normalize_conversation_history(session.conversation_history)
-        effective_input = apply_state_schema_defaults(payload.metadata, agent.state_schema)
+        effective_input = apply_state_schema_defaults(payload.metadata, version.state_schema)
 
         checkpoint_thread_id = uuid.uuid4()
         repo = GraphRuntimeRepository(self.db)
         run = repo.create_run(
             agent_id,
-            {},
             message=payload.message,
             version_id=version_id,
             session_id=session_id,
@@ -92,10 +95,9 @@ class RunService:
 
         runner = GraphRunner(self.db)
         try:
-            result = runner.compile_and_run(
+            runner.compile_and_run(
                 agent_id,
                 runtime_input,
-                persisted_input_data={k: v for k, v in runtime_input.items() if k != CONVERSATION_HISTORY_KEY},
                 session_id=session_id,
                 version_id=version_id,
                 conversation_history=conversation_history,
@@ -103,16 +105,11 @@ class RunService:
                 resumed_from_run_id=resumed_from_run_id,
                 existing_run=run,
                 resume_command=resume_command,
+                resume=resumed_from_run_id is not None,
             )
         except Exception:
             # compile_and_run already marked run as failed/interrupted
-            result = None
-
-        # Reload to get latest status after execution
-        self.db.expire(run)
-        run = self.db.query(Run).filter(Run.id == run_id).first()
-        if run and run.conversation_turn and run.status == RunStatus.success:
-            SessionService(self.db).append_conversation_turn(session_id, run.conversation_turn)
+            pass
 
     def resume_run(self, run_id: int, human_response=None) -> Run:
         """Resume an interrupted run from its last LangGraph checkpoint.
@@ -130,7 +127,6 @@ class RunService:
         checkpoint_thread_id = interrupted_run.checkpoint_thread_id
         new_run = repo.create_run(
             interrupted_run.agent_id,
-            {},
             message=interrupted_run.message,
             version_id=interrupted_run.version_id,
             session_id=interrupted_run.session_id,

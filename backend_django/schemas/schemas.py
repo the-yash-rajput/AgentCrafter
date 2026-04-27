@@ -11,26 +11,12 @@ from type_defs import JSONMapping
 class AgentCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    state_schema: JSONMapping = Field(default_factory=dict)
-    entry_node: Optional[str] = None
-    exit_nodes: List[str] = Field(default_factory=list)
-    metadata_: JSONMapping = Field(default_factory=dict, alias="metadata")
-
-    class Config:
-        populate_by_name = True
 
 
 class AgentUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     status: Optional[AgentStatus] = None
-    state_schema: Optional[JSONMapping] = None
-    entry_node: Optional[str] = None
-    exit_nodes: Optional[List[str]] = None
-    metadata_: Optional[JSONMapping] = Field(default=None, alias="metadata")
-
-    class Config:
-        populate_by_name = True
 
 
 class AgentResponse(BaseModel):
@@ -38,16 +24,11 @@ class AgentResponse(BaseModel):
     name: str
     description: Optional[str]
     status: AgentStatus
-    state_schema: JSONMapping
-    entry_node: Optional[str]
-    exit_nodes: List[str] = Field(default_factory=list)
-    metadata: JSONMapping = Field(default_factory=dict, alias="metadata_")
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
-        populate_by_name = True
 
 
 class AgentListResponse(BaseModel):
@@ -215,9 +196,6 @@ class RunResponse(BaseModel):
     session_id: Optional[int]
     status: RunStatus
     message: Optional[str]
-    input_data: JSONMapping
-    output_data: JSONMapping
-    conversation_turn: Any
     state_snapshots: Any
     error: Optional[str]
     started_at: datetime

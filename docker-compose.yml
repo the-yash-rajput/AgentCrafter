@@ -5,13 +5,13 @@ services:
     environment:
       POSTGRES_USER: langgraph
       POSTGRES_PASSWORD: langgraph_secret
-      POSTGRES_DB: ldb2
+      POSTGRES_DB: lbdnew
     ports:
       - "${POSTGRES_HOST_PORT:-5733}:5733"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U langgraph -d ldb2 -p 5733"]
+      test: ["CMD-SHELL", "pg_isready -U langgraph -d lbdnew -p 5733"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -22,7 +22,7 @@ services:
       - "8000:8000"
       - "${BACKEND_DEBUGPY_PORT:-5678}:${BACKEND_DEBUGPY_PORT:-5678}"
     environment:
-      DATABASE_URL: postgresql://langgraph:langgraph_secret@postgres:5733/ldb2
+      DATABASE_URL: postgresql://langgraph:langgraph_secret@postgres:5733/lbdnew
       DJANGO_SECRET_KEY: ${SECRET_KEY:-supersecretkey}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}

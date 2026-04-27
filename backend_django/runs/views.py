@@ -127,12 +127,12 @@ class RunStreamView(APIView):
 
         snapshots = list(run.state_snapshots or [])
         run_status = run.status.value if hasattr(run.status, "value") else run.status
-        output_data = run.output_data or {}
+        final_output = (snapshots[-1].get("state_after") or {}) if snapshots else {}
 
         def event_stream():
             for snapshot in snapshots:
                 yield f"data: {json.dumps(snapshot)}\n\n"
-            yield f"data: {json.dumps({'status': run_status, 'output': output_data})}\n\n"
+            yield f"data: {json.dumps({'status': run_status, 'output': final_output})}\n\n"
 
         response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
         response["Cache-Control"] = "no-cache"

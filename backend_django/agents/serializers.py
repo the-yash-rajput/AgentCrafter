@@ -97,34 +97,20 @@ class AgentVersionWithGraphSerializer(AgentVersionResponseSerializer):
 
 class VersionPatchSerializer(serializers.Serializer):
     """Validates PATCH /api/agents/{id}/versions/{vid} request body."""
-    state_schema = serializers.DictField(required=True)
+    state_schema = serializers.DictField(required=False)
+    entry_node = serializers.CharField(required=False, allow_null=True)
+    exit_nodes = serializers.ListField(child=serializers.CharField(), required=False, allow_null=True)
 
 
 # ── Agent read serializers ────────────────────────────────────────────────────
 
 class AgentResponseSerializer(_SAModelSerializer):
-    """
-    Full agent response including all scalar fields.
-
-    The SQLAlchemy model stores metadata in the metadata_ attribute (column
-    alias). We serialize it as "metadata" to match the existing API contract.
-    """
     id = serializers.IntegerField()
     name = serializers.CharField()
     description = serializers.CharField(allow_null=True)
     status = serializers.CharField()
-    state_schema = serializers.DictField()
-    entry_node = serializers.CharField(allow_null=True)
-    exit_nodes = serializers.ListField(child=serializers.CharField())
-    # metadata_ is the Python attribute on the SQLAlchemy Agent model;
-    # the JSON key "metadata" is what the frontend expects.
-    metadata = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
-
-    def get_metadata(self, obj):
-        # SQLAlchemy uses metadata_ as attribute name (column alias)
-        return getattr(obj, "metadata_", None) or {}
 
 
 class AgentWithGraphSerializer(AgentResponseSerializer):
@@ -147,15 +133,6 @@ class AgentCreateSerializer(serializers.Serializer):
     """Validates POST /api/agents request body."""
     name = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_null=True, default=None)
-    state_schema = serializers.DictField(required=False, default=dict)
-    entry_node = serializers.CharField(required=False, allow_null=True, default=None)
-    exit_nodes = serializers.ListField(
-        child=serializers.CharField(), required=False, default=list
-    )
-    # The frontend sends "metadata"; the Pydantic schema uses alias="metadata"
-    # with the Python attribute metadata_. We accept "metadata" here and pass
-    # it through to the Pydantic payload as metadata_ via the alias.
-    metadata = serializers.DictField(required=False, default=dict)
 
 
 class AgentUpdateSerializer(serializers.Serializer):
@@ -165,12 +142,6 @@ class AgentUpdateSerializer(serializers.Serializer):
     status = serializers.ChoiceField(
         choices=["draft", "active", "archived"], required=False, allow_null=True
     )
-    state_schema = serializers.DictField(required=False, allow_null=True)
-    entry_node = serializers.CharField(required=False, allow_null=True)
-    exit_nodes = serializers.ListField(
-        child=serializers.CharField(), required=False, allow_null=True
-    )
-    metadata = serializers.DictField(required=False, allow_null=True)
 
 
 # ── Node write serializers ────────────────────────────────────────────────────

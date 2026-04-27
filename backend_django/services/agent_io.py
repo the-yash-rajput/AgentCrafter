@@ -115,10 +115,6 @@ class AgentConfigSerializer:
             name=name,
             description=agent_data.get("description") or None,
             status=AgentStatus.draft,
-            state_schema={},
-            entry_node=None,
-            exit_nodes=[],
-            metadata_={},
         )
         db.add(agent)
         db.flush()
@@ -129,7 +125,6 @@ class AgentConfigSerializer:
             entry_node=version_data.get("entry_node"),
             exit_nodes=list(version_data.get("exit_nodes") or []),
             state_schema=dict(version_data.get("state_schema") or {}),
-            metadata_={},
         )
         db.add(version)
         db.flush()
