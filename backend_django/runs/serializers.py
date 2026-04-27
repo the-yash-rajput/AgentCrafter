@@ -23,9 +23,6 @@ class RunResponseSerializer(serializers.Serializer):
     # status is a RunStatus enum on the SQLAlchemy model; .value gives "success" etc.
     status = serializers.SerializerMethodField()
     message = serializers.CharField(allow_null=True)
-    input_data = serializers.DictField()
-    output_data = serializers.DictField()
-    conversation_turn = serializers.JSONField()
     state_snapshots = serializers.JSONField()
     error = serializers.CharField(allow_null=True)
     checkpoint_thread_id = serializers.UUIDField(allow_null=True)

@@ -18,6 +18,7 @@ from services.runtime.graph_runtime.executor import LangGraphExecutor
 from services.runtime.graph_runtime.fetcher import GraphRuntimeRepository
 from services.runtime.graph_runtime.tracing import LangGraphTraceService
 from services.runtime.graph_runtime.validator import GraphValidator
+from services.session_service import SessionService
 from type_defs import ExecutionContext, StatePayload
 
 
@@ -37,7 +38,6 @@ class GraphRunner:
         input_data: StatePayload,
         *,
         execution_context: Optional[ExecutionContext] = None,
-        persisted_input_data: Optional[StatePayload] = None,
         session_id: Optional[int] = None,
         version_id: Optional[int] = None,
         conversation_history: Optional[list[dict[str, str]]] = None,
@@ -45,6 +45,7 @@ class GraphRunner:
         resumed_from_run_id: Optional[int] = None,
         existing_run=None,
         resume_command=None,
+        resume: bool = False,
     ) -> dict:
         base_execution_context = dict(execution_context or {})
         resolved_conversation_history = normalize_conversation_history(
@@ -60,9 +61,6 @@ class GraphRunner:
         request = GraphExecutionRequest(
             agent_id=agent_id,
             input_data=runtime_input,
-            persisted_input_data=strip_session_fields(
-                persisted_input_data if persisted_input_data is not None else input_data
-            ),
             session_id=session_id,
             conversation_history=list(resolved_conversation_history),
             execution_context={
@@ -77,7 +75,7 @@ class GraphRunner:
 
         initial_state = apply_state_schema_defaults(request.input_data, graph_data.agent.state_schema)
         persisted_initial_state = apply_state_schema_defaults(
-            request.persisted_input_data,
+            strip_session_fields(input_data),
             graph_data.agent.state_schema,
         )
 
@@ -89,7 +87,6 @@ class GraphRunner:
         else:
             run = self.repository.create_run(
                 request.agent_id,
-                persisted_initial_state,
                 version_id=version_id,
                 session_id=request.session_id,
                 checkpoint_thread_id=checkpoint_thread_id,
@@ -127,6 +124,7 @@ class GraphRunner:
                 snapshots=snapshots,
                 thread_id=str(checkpoint_thread_id),
                 resume_command=resume_command,
+                resume=resume,
             )
             current_state = result.output
             persisted_output = strip_session_fields(
@@ -136,15 +134,14 @@ class GraphRunner:
                     exit_nodes=exit_nodes,
                 )
             )
-            self.repository.mark_run_success(
-                run,
-                persisted_output,
-                snapshots,
-                conversation_turn=build_conversation_turn(
-                    persisted_initial_state,
-                    agent_output=persisted_output,
-                ),
-            )
+            # Append the conversation turn to the session BEFORE marking the run
+            # successful — this ensures the session is fully updated by the time the
+            # frontend polls and sees status=success, eliminating the race condition.
+            if request.session_id is not None:
+                turn = build_conversation_turn(persisted_initial_state, agent_output=persisted_output)
+                if turn:
+                    SessionService(self.db).append_conversation_turn(request.session_id, turn)
+            self.repository.mark_run_success(run, snapshots)
             self.trace_service.mark_success(trace_session, current_state)
             return {
                 **result.to_dict(),
@@ -167,11 +164,6 @@ class GraphRunner:
                 )
             )
             error_str = str(e)
-            conversation_turn = build_conversation_turn(
-                persisted_initial_state,
-                agent_output=persisted_output,
-                error=error_str,
-            )
 
             # Confidence-check HITL: LangGraph interrupt() was called inside a node.
             # Store the interrupt payload so the frontend can show context to the human.
@@ -187,7 +179,6 @@ class GraphRunner:
                     interrupt_payload = e.interrupts[0].value
                 self.repository.mark_run_interrupted(
                     run, error_str, snapshots,
-                    conversation_turn=conversation_turn,
                     interrupt_metadata=interrupt_payload,
                 )
                 self.trace_service.mark_failure(trace_session, current_state, error_str)
@@ -197,13 +188,9 @@ class GraphRunner:
             # Any other exception (crash, timeout, SIGKILL) → mark as interrupted (resumable).
             is_logical_failure = bool(current_state.get("_error"))
             if is_logical_failure:
-                self.repository.mark_run_failed(
-                    run, error_str, snapshots, conversation_turn=conversation_turn
-                )
+                self.repository.mark_run_failed(run, error_str, snapshots)
             else:
-                self.repository.mark_run_interrupted(
-                    run, error_str, snapshots, conversation_turn=conversation_turn
-                )
+                self.repository.mark_run_interrupted(run, error_str, snapshots)
             self.trace_service.mark_failure(trace_session, current_state, error_str)
             raise
         finally:

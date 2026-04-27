@@ -196,9 +196,6 @@ class RunResponse(BaseModel):
     session_id: Optional[int]
     status: RunStatus
     message: Optional[str]
-    input_data: JSONMapping
-    output_data: JSONMapping
-    conversation_turn: Any
     state_snapshots: Any
     error: Optional[str]
     started_at: datetime

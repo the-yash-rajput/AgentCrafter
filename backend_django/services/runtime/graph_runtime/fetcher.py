@@ -105,7 +105,6 @@ class GraphRuntimeRepository:
     def create_run(
         self,
         agent_id: int,
-        input_data: StatePayload,
         *,
         message: str | None = None,
         version_id: int | None = None,
@@ -120,9 +119,6 @@ class GraphRuntimeRepository:
             session_id=session_id,
             status=RunStatus.running,
             message=message,
-            input_data=dict(input_data or {}),
-            output_data={},
-            conversation_turn=[],
             state_snapshots=[],
             checkpoint_thread_id=checkpoint_thread_id,
             resumed_from_run_id=resumed_from_run_id,
@@ -135,14 +131,9 @@ class GraphRuntimeRepository:
     def mark_run_success(
         self,
         run: Run,
-        output_data: StatePayload,
         snapshots: list[dict],
-        *,
-        conversation_turn: list[dict[str, str]] | None = None,
     ) -> None:
         run.status = RunStatus.success
-        run.output_data = output_data
-        run.conversation_turn = list(conversation_turn or [])
         run.state_snapshots = snapshots
         run.completed_at = datetime.utcnow()
         self.db.commit()
@@ -152,12 +143,9 @@ class GraphRuntimeRepository:
         run: Run,
         error: str,
         snapshots: list[dict],
-        *,
-        conversation_turn: list[dict[str, str]] | None = None,
     ) -> None:
         run.status = RunStatus.failed
         run.error = error
-        run.conversation_turn = list(conversation_turn or [])
         run.state_snapshots = snapshots
         run.completed_at = datetime.utcnow()
         self.db.commit()
@@ -168,12 +156,10 @@ class GraphRuntimeRepository:
         error: str,
         snapshots: list[dict],
         *,
-        conversation_turn: list[dict[str, str]] | None = None,
         interrupt_metadata: dict | None = None,
     ) -> None:
         run.status = RunStatus.interrupted
         run.error = error
-        run.conversation_turn = list(conversation_turn or [])
         run.state_snapshots = snapshots
         run.interrupt_metadata = interrupt_metadata
         run.completed_at = datetime.utcnow()

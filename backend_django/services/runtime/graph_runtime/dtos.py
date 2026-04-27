@@ -12,7 +12,6 @@ from type_defs import ExecutionContext, StatePayload
 class GraphExecutionRequest:
     agent_id: int
     input_data: StatePayload = field(default_factory=dict)
-    persisted_input_data: StatePayload = field(default_factory=dict)
     session_id: int | None = None
     conversation_history: list[dict[str, str]] = field(default_factory=list)
     execution_context: ExecutionContext = field(default_factory=dict)
@@ -28,7 +27,6 @@ class GraphExecutionRequest:
         return GraphExecutionRequest(
             agent_id=self.agent_id,
             input_data=dict(self.input_data or {}),
-            persisted_input_data=dict(self.persisted_input_data or {}),
             session_id=self.session_id,
             conversation_history=list(self.conversation_history or []),
             execution_context={

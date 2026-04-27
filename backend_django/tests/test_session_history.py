@@ -23,7 +23,6 @@ sys.modules.setdefault("jinja2", SimpleNamespace(Template=_TemplateStub))
 
 from services.session_history import (
     build_conversation_turn,
-    flatten_conversation_history,
     normalize_conversation_history,
 )
 
@@ -50,27 +49,6 @@ class SessionHistoryTests(unittest.TestCase):
             [
                 {"role": "user", "content": "What is the weather?"},
                 {"role": "assistant", "content": "It is sunny."},
-            ],
-        )
-
-    def test_flatten_conversation_history_uses_stored_turn_when_available(self) -> None:
-        runs = [
-            SimpleNamespace(
-                conversation_turn=[
-                    {"role": "user", "content": "Hi"},
-                    {"role": "assistant", "content": "Hello"},
-                ],
-                input_data={"message": "ignored"},
-                output_data={"response": "ignored"},
-                error=None,
-            )
-        ]
-
-        self.assertEqual(
-            flatten_conversation_history(runs),
-            [
-                {"role": "user", "content": "Hi"},
-                {"role": "assistant", "content": "Hello"},
             ],
         )
 
